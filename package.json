@@ -1,0 +1,12 @@
+{
+  "name": "reef-tracker",
+  "version": "1.0.0",
+  "description": "Self-hosted aquarium log: water parameters, dosing, maintenance, trend dashboard and RODI filter alerts.",
+  "main": "server.js",
+  "private": true,
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  }
+}

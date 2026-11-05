@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reef Tracker</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath d=%22M12 3c3 4 6 7.2 6 10.5A6 6 0 0 1 6 13.5C6 10.2 9 7 12 3z%22 fill=%22%230f6f8c%22/%3E%3C/svg%3E">
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f4f6f7; --surface:#fcfcfb; --surface-2:#eef1f2; --line:#dde2e4; --grid:#e8ecee;
+  --text:#0b0b0b; --text-2:#52514e; --muted:#7c7b76;
+  --accent:#0f6f8c; --accent-ink:#fff; --series:#2a78d6; --series-2:#eb6834; --series-3:#1baf7a;
+  --band:rgba(27,175,122,.10); --band-line:rgba(27,175,122,.45);
+  --good:#0f7a3d; --good-bg:#e3f4ea; --warn:#9a6200; --warn-bg:#fdf1d8; --crit:#b42318; --crit-bg:#fde7e5;
+  --shadow:0 1px 2px rgba(0,0,0,.05),0 1px 1px rgba(0,0,0,.03);
+}
+@media (prefers-color-scheme:dark){
+  :root:where(:not([data-theme="light"])){
+    color-scheme:dark;
+    --bg:#121313; --surface:#1a1a19; --surface-2:#232423; --line:#323331; --grid:#2a2b29;
+    --text:#f0efec; --text-2:#c3c2b7; --muted:#8f8e86;
+    --accent:#3aa6c4; --accent-ink:#0b0b0b; --series:#3987e5; --series-2:#d95926; --series-3:#199e70;
+    --band:rgba(25,158,112,.14); --band-line:rgba(25,158,112,.5);
+    --good:#5fd08f; --good-bg:#16301f; --warn:#f2b94b; --warn-bg:#33270f; --crit:#ff8a80; --crit-bg:#3a1916;
+    --shadow:none;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+.wrap{max-width:1180px;margin:0 auto;padding:16px 16px 60px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin-bottom:14px}
+h1{font-size:18px;margin:0;font-weight:650;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+h1 svg{color:var(--accent)}
+h2{font-size:15px;margin:0 0 10px;font-weight:620}
+h3{font-size:13px;margin:0;font-weight:600}
+.seg{display:inline-flex;background:var(--surface-2);border-radius:9px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg button{border:0;background:none;padding:6px 12px;border-radius:7px;cursor:pointer;color:var(--text-2);font-weight:520;position:relative}
+.seg button.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+.seg.sm button{padding:4px 9px;font-size:12.5px}
+.badge{display:inline-block;min-width:17px;padding:0 5px;margin-left:5px;border-radius:9px;background:var(--crit);color:#fff;font-size:11px;line-height:17px;text-align:center;font-weight:600}
+.badge.warn{background:var(--warn)}
+.spacer{flex:1}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
+.grid{display:grid;gap:12px}
+.tiles{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+.charts{grid-template-columns:repeat(auto-fill,minmax(340px,1fr))}
+.tile .lbl{color:var(--text-2);font-size:12.5px;display:flex;justify-content:space-between;gap:6px}
+.tile .val{font-size:26px;font-weight:640;letter-spacing:-.02em;margin:2px 0 0;font-variant-numeric:tabular-nums}
+.tile .val small{font-size:13px;font-weight:500;color:var(--text-2);margin-left:3px}
+.tile .sub{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:20px;white-space:nowrap}
+.chip.ok{color:var(--good);background:var(--good-bg)} .chip.warn{color:var(--warn);background:var(--warn-bg)} .chip.crit{color:var(--crit);background:var(--crit-bg)} .chip.na{color:var(--muted);background:var(--surface-2)}
+.alerts{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.alert{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border-radius:10px;font-size:13.5px}
+.alert.crit{background:var(--crit-bg);color:var(--crit)} .alert.warn{background:var(--warn-bg);color:var(--warn)} .alert.info{background:var(--surface-2);color:var(--text-2)}
+.alert b{font-weight:640}
+.alert a{color:inherit;font-weight:600;cursor:pointer;text-decoration:underline}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:16px 0 10px}
+.toolbar .lab{color:var(--text-2);font-size:12.5px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--text-2);font-size:12px;align-items:center}
+.legend i{display:inline-block;vertical-align:middle;margin-right:5px}
+.chart-card{padding:12px 14px 8px}
+.chart-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:4px}
+.chart-head .meta{color:var(--muted);font-size:12px}
+.chart{position:relative;height:190px}
+.chart svg{display:block;width:100%;height:100%;overflow:visible}
+.chart .empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:13px}
+.tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line);box-shadow:0 4px 14px rgba(0,0,0,.12);border-radius:8px;padding:6px 9px;font-size:12px;white-space:nowrap;z-index:5;transform:translate(-50%,-100%);margin-top:-10px;display:none}
+.tip .d{color:var(--text-2)} .tip .v{font-weight:640;font-variant-numeric:tabular-nums}
+.row{align-items:end;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px 14px}
+label.f{display:block;font-size:12.5px;color:var(--text-2)}
+label.f > input,label.f > select,label.f > textarea{display:block;margin-top:4px}
+label.f span.u{color:var(--muted)}
+input[type=text],input[type=number],input[type=date],select,textarea{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%;min-width:0}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
+textarea{resize:vertical;min-height:60px}
+fieldset{border:0;padding:0;margin:0 0 16px}
+legend.h{font-weight:620;font-size:13px;margin-bottom:8px;padding:0}
+.btn{border:1px solid var(--line);background:var(--surface);padding:7px 14px;border-radius:8px;cursor:pointer;font-weight:560}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.danger{color:var(--crit)}
+.btn.sm{padding:4px 9px;font-size:12.5px}
+.btn:disabled{opacity:.5;cursor:default}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--text-2);font-weight:560;font-size:12px;background:var(--surface)}
+.tablewrap th{position:sticky;top:0;z-index:1}
+a.btn{text-decoration:none;color:inherit;display:inline-block}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+td .out{color:var(--crit);font-weight:600}
+.tablewrap{overflow:auto;max-height:70vh}
+.ev{display:inline-block;background:var(--surface-2);border-radius:6px;padding:0 6px;margin:1px 3px 1px 0;font-size:12px;color:var(--text-2)}
+.filters{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.bar{height:8px;background:var(--surface-2);border-radius:5px;overflow:hidden;margin:4px 0 2px}
+.bar > div{height:100%;border-radius:5px;background:var(--good)}
+.bar.warn > div{background:var(--warn)} .bar.crit > div{background:var(--crit)}
+.kv{display:flex;justify-content:space-between;font-size:12.5px;color:var(--text-2);gap:8px}
+.kv b{color:var(--text);font-weight:560;font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)} .small{font-size:12px}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--surface);padding:8px 14px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+.toast.show{opacity:1}
+.status-line{font-size:12px;color:var(--muted)}
+.inline-form{background:var(--surface-2);border-radius:9px;padding:10px;margin-top:8px}
+.hide{display:none!important}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:760px){.two{grid-template-columns:1fr}.charts{grid-template-columns:1fr}}
+.ptable input{padding:5px 7px}
+.ptable td{padding:4px 5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3c3 4 6 7.2 6 10.5A6 6 0 0 1 6 13.5C6 10.2 9 7 12 3z"/><path d="M9.5 14.5a2.5 2.5 0 0 0 2.5 2.5"/></svg>Reef Tracker</h1>
+    <div class="seg" id="tankSeg"></div>
+    <div class="spacer"></div>
+    <div class="seg" id="navSeg">
+      <button data-tab="dashboard">Dashboard</button>
+      <button data-tab="log">Log entry</button>
+      <button data-tab="history">History</button>
+      <button data-tab="rodi">RODI</button>
+      <button data-tab="import">Import</button>
+      <button data-tab="settings">Settings</button>
+    </div>
+  </header>
+  <div id="statusLine" class="status-line"></div>
+  <main id="view"></main>
+</div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+
+<script src="/logic.js"></script>
+<script>
+/* ------------------------------------------------------------------ defaults */
+const DEFAULT_CONFIG = Logic.DEFAULT_CONFIG;
+
+/* ------------------------------------------------------------------ state */
+const S = {
+  db:null, canWrite:true, version:-1, info:null,
+  config:null, entries:[], filters:[], rodiLogs:[],
+  loaded:{config:false,entries:false,filters:false,rodi:false},
+  tank:'reef', tab:'dashboard', range:'90', showEvents:true, editingId:null,
+  replacing:null, editingFilter:null, histParamFilter:'all'
+};
+try{ const p=JSON.parse(localStorage.getItem('aqlog.ui')||'{}'); Object.assign(S,{tank:p.tank||S.tank,range:p.range||S.range}); }catch(e){}
+function saveUi(){ try{ localStorage.setItem('aqlog.ui',JSON.stringify({tank:S.tank,range:S.range})); }catch(e){} }
+
+/* ------------------------------------------------------------------ utils */
+const $ = s => document.querySelector(s);
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const DAY = 86400000;
+const toMs = d => { const [y,m,dd]=d.split('-').map(Number); return Date.UTC(y,m-1,dd); };
+const todayStr = () => { const n=new Date(); return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0'); };
+const msToStr = ms => new Date(ms).toISOString().slice(0,10);
+const daysBetween = (a,b) => Math.round((toMs(b)-toMs(a))/DAY);
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const fmtDate = d => { if(!d) return '—'; const [y,m,dd]=d.split('-').map(Number); return `${MON[m-1]} ${dd}, ${y}`; };
+const fmtShort = ms => { const d=new Date(ms); return `${MON[d.getUTCMonth()]} ${d.getUTCDate()}`; };
+const fmtNum = (v,dp) => v==null||isNaN(v) ? '—' : Number(v).toLocaleString(undefined,{minimumFractionDigits:dp??0,maximumFractionDigits:dp??2});
+const num = v => { if(v===''||v==null) return null; const n=Number(v); return isNaN(n)?null:n; };
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2200); }
+const cfg = () => S.config || DEFAULT_CONFIG;
+const tankCfg = id => cfg().tanks.find(t=>t.id===(id||S.tank)) || cfg().tanks[0];
+const rodiCfg = () => Object.assign({}, DEFAULT_CONFIG.rodi, cfg().rodi||{});
+const sortedEntries = tank => S.entries.filter(e=>e.tank===tank).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.id<b.id?-1:1));
+function status(p,v){
+  if(v==null) return 'na';
+  if(p.low!=null && v<p.low) return 'low';
+  if(p.high!=null && v>p.high) return 'high';
+  return 'ok';
+}
+function chip(st){
+  if(st==='ok') return '<span class="chip ok">✓ In range</span>';
+  if(st==='low') return '<span class="chip crit">↓ Low</span>';
+  if(st==='high') return '<span class="chip crit">↑ High</span>';
+  return '<span class="chip na">No data</span>';
+}
+const evText = ev => Logic.evText(ev);
+function wcGallons(ev, tank){
+  if(ev.type!=='water_change') return 0;
+  if(ev.gallons!=null) return ev.gallons;
+  const vol = tankCfg(tank).volume;
+  return (vol && ev.percent!=null) ? vol*ev.percent/100 : 0;
+}
+
+/* ------------------------------------------------------------------ data layer */
+async function req(method, url, body){
+  const r = await fetch(url, {method, headers: body?{'Content-Type':'application/json'}:{}, body: body?JSON.stringify(body):undefined});
+  if(!r.ok){ let msg=r.statusText; try{ msg=(await r.json()).error||msg; }catch(e){} throw new Error(msg); }
+  return r.json();
+}
+// Small document API used by the views: db.doc('coll/id').set|update|delete, db.collection('coll').add
+const api = {
+  doc(path){ const [c,id]=path.split('/'); const u=`/api/doc/${c}/${encodeURIComponent(id)}`;
+    return { set:d=>req('PUT',u,d), update:d=>req('PATCH',u,d), delete:()=>req('DELETE',u) }; },
+  collection(c){ return { add:d=>req('POST',`/api/doc/${c}`,d) }; }
+};
+async function loadState(){
+  const s = await req('GET','/api/state');
+  S.version=s.version; S.config=s.config;
+  S.entries=s.entries; S.filters=s.filters.sort((a,b)=>(a.order||0)-(b.order||0));
+  S.rodiLogs=s.rodi.sort((a,b)=>a.date<b.date?-1:1);
+  Object.keys(S.loaded).forEach(k=>S.loaded[k]=true);
+  renderStatus('');
+  if(!isTyping()) render(); else pendingRender=true;
+}
+async function initDb(){
+  S.db=api;
+  renderStatus('Loading…');
+  try{ await loadState(); }catch(e){ renderStatus('Can’t reach the Reef Tracker server: '+e.message); }
+  req('GET','/api/info').then(i=>{ S.info=i; if(S.tab==='settings' && !isTyping()) render(); }).catch(()=>{});
+  // Pick up changes made from another device.
+  setInterval(async()=>{
+    if(document.hidden) return;
+    try{ const v=await req('GET','/api/version'); if(v.version!==S.version) await loadState(); if(/server/.test($('#statusLine').textContent)) renderStatus(''); }
+    catch(e){ renderStatus('Can’t reach the Reef Tracker server — retrying…'); }
+  }, 20000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) req('GET','/api/version').then(v=>{ if(v.version!==S.version) loadState(); }).catch(()=>{}); });
+}
+function allLoaded(){ return Object.values(S.loaded).every(Boolean); }
+let pendingRender=false;
+function isTyping(){ const a=document.activeElement; return a && ['INPUT','TEXTAREA','SELECT'].includes(a.tagName) && (S.tab==='log'||S.tab==='settings'||S.tab==='rodi'||S.tab==='import'); }
+document.addEventListener('focusout',()=>{ setTimeout(()=>{ if(pendingRender && !isTyping()){ pendingRender=false; render(); } },150); });
+function renderStatus(msg){ $('#statusLine').textContent=msg||''; }
+
+async function write(fn, okMsg){
+  try{ await fn(S.db); await loadState(); if(okMsg) toast(okMsg); return true; }
+  catch(e){ toast('Save failed: '+(e&&e.message||e)); return false; }
+}
+function clean(o){ return JSON.parse(JSON.stringify(o)); }
+
+/* ------------------------------------------------------------------ alerts */
+const ctx = () => ({config:S.config, entries:S.entries, rodiLogs:S.rodiLogs, today:todayStr()});
+const filterUsage = f => Logic.filterUsage(ctx(), f);
+const alertHtml = (a, link) => `<b>${esc(a.title)}</b>${a.lvl==='info'?': ':' — '}${esc(a.detail)}${link?' <a data-go="rodi">Open RODI</a>':''}`;
+function filterAlerts(link=true){ return Logic.filterAlerts(ctx(), S.filters).map(a=>({lvl:a.lvl, html:alertHtml(a, link)})); }
+function paramAlerts(tankId){ return Logic.paramAlerts(ctx(), tankId).map(a=>({lvl:a.lvl, html:alertHtml(a,false)})); }
+
+/* ------------------------------------------------------------------ chart */
+const tip = $('#tip');
+function chartSvg(el, opts){
+  // opts: {points:[{t,v,d}], low, high, dp, unit, xMin, xMax, events:[{t,kind,label}], bars:bool}
+  const W = el.clientWidth||400, H = el.clientHeight||190;
+  const m = {l:44,r:10,t:8,b:opts.events&&opts.events.length?34:22};
+  const iw=W-m.l-m.r, ih=H-m.t-m.b;
+  const pts=opts.points;
+  if(!pts.length){ el.innerHTML='<div class="empty">No readings in this range</div>'; return; }
+  let lo=Math.min(...pts.map(p=>p.v)), hi=Math.max(...pts.map(p=>p.v));
+  if(opts.low!=null) lo=Math.min(lo,opts.low); if(opts.high!=null) hi=Math.max(hi,opts.high);
+  if(opts.bars) lo=0;
+  if(hi===lo){ hi+=1; lo-=1; }
+  const pad=(hi-lo)*0.08; if(!opts.bars) lo-=pad; hi+=pad;
+  if(lo<0 && !(pts.some(p=>p.v<0))) lo=0;
+  const x0=opts.xMin, x1=Math.max(opts.xMax, x0+DAY);
+  const X=t=>m.l+(t-x0)/(x1-x0)*iw, Y=v=>m.t+ih-(v-lo)/(hi-lo)*ih;
+  // ticks
+  const yt=niceTicks(lo,hi,4), span=(x1-x0)/DAY;
+  const xt=[]; { const n=Math.max(2,Math.min(6,Math.floor(iw/80))); for(let i=0;i<=n;i++) xt.push(x0+(x1-x0)*i/n); }
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.title||'chart')}">`;
+  yt.forEach(v=>{ s+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--grid)" stroke-width="1"/><text x="${m.l-6}" y="${Y(v)+4}" text-anchor="end" font-size="11" fill="var(--muted)">${fmtTick(v)}</text>`; });
+  xt.forEach(t=>{ s+=`<text x="${X(t)}" y="${m.t+ih+15}" text-anchor="middle" font-size="11" fill="var(--muted)">${span>500?new Date(t).getUTCFullYear()+' '+MON[new Date(t).getUTCMonth()]:fmtShort(t)}</text>`; });
+  if(opts.low!=null && opts.high!=null){
+    const yh=Y(opts.high), yl=Y(opts.low);
+    s+=`<rect x="${m.l}" y="${yh}" width="${iw}" height="${Math.max(0,yl-yh)}" fill="var(--band)"/>`;
+    s+=`<line x1="${m.l}" x2="${W-m.r}" y1="${yh}" y2="${yh}" stroke="var(--band-line)" stroke-dasharray="3 3"/><line x1="${m.l}" x2="${W-m.r}" y1="${yl}" y2="${yl}" stroke="var(--band-line)" stroke-dasharray="3 3"/>`;
+  }
+  if(opts.bars){
+    const bw=Math.max(2,Math.min(10,iw/Math.max(30,span)*0.7));
+    pts.forEach(p=>{ const y=Y(p.v), h=Y(lo)-y; s+=`<rect x="${X(p.t)-bw/2}" y="${y}" width="${bw}" height="${Math.max(1,h)}" rx="${Math.min(2,bw/2)}" fill="var(--series)"/>`; });
+  } else {
+    const d=pts.map((p,i)=>(i?'L':'M')+X(p.t).toFixed(1)+','+Y(p.v).toFixed(1)).join('');
+    s+=`<path d="${d}" fill="none" stroke="var(--series)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const r = pts.length>60?2.2:3.2;
+    pts.forEach(p=>{ const st=status({low:opts.low,high:opts.high},p.v); s+=`<circle cx="${X(p.t)}" cy="${Y(p.v)}" r="${r}" fill="${st==='ok'||opts.low==null?'var(--series)':'var(--crit)'}" stroke="var(--surface)" stroke-width="1.5"/>`; });
+  }
+  if(opts.events && opts.events.length){
+    const ey=H-7;
+    s+=`<line x1="${m.l}" x2="${W-m.r}" y1="${ey}" y2="${ey}" stroke="var(--grid)"/>`;
+    opts.events.forEach(e=>{
+      const x=X(e.t);
+      if(e.kind==='wc') s+=`<circle cx="${x}" cy="${ey}" r="3.5" fill="var(--series-3)" stroke="var(--surface)" stroke-width="1.5"/>`;
+      else if(e.kind==='rowa') s+=`<path d="M${x},${ey-5} L${x+4.5},${ey+3} L${x-4.5},${ey+3}Z" fill="var(--series-2)" stroke="var(--surface)" stroke-width="1"/><line x1="${x}" x2="${x}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--series-2)" stroke-opacity=".35" stroke-dasharray="2 3"/>`;
+      else s+=`<rect x="${x-3}" y="${ey-3}" width="6" height="6" rx="1" fill="var(--muted)" stroke="var(--surface)" stroke-width="1"/>`;
+    });
+  }
+  s+=`<line class="xh" x1="0" x2="0" y1="${m.t}" y2="${m.t+ih}" stroke="var(--muted)" stroke-width="1" visibility="hidden"/>`;
+  s+=`<rect class="hit" x="${m.l}" y="0" width="${iw}" height="${H}" fill="transparent"/></svg>`;
+  el.innerHTML=s;
+  const svg=el.querySelector('svg'), xh=svg.querySelector('.xh');
+  svg.querySelector('.hit').addEventListener('pointermove',ev=>{
+    const rect=svg.getBoundingClientRect(), mx=(ev.clientX-rect.left)*(W/rect.width), my=(ev.clientY-rect.top)*(H/rect.height);
+    // events strip hover
+    if(opts.events && opts.events.length && my>H-16){
+      let best=null,bd=1e9; opts.events.forEach(e=>{ const d=Math.abs(X(e.t)-mx); if(d<bd){bd=d;best=e;} });
+      if(best && bd<10){ showTip(el,X(best.t)*rect.width/W, (H-12)*rect.height/H, `<div class="d">${fmtDate(msToStr(best.t))}</div><div>${esc(best.label)}</div>`); xh.setAttribute('visibility','hidden'); return; }
+    }
+    let best=null,bd=1e9; pts.forEach(p=>{ const d=Math.abs(X(p.t)-mx); if(d<bd){bd=d;best=p;} });
+    if(!best) return;
+    xh.setAttribute('x1',X(best.t)); xh.setAttribute('x2',X(best.t)); xh.setAttribute('visibility','visible');
+    const evs=(opts.events||[]).filter(e=>e.t===best.t).map(e=>`<div class="d">${esc(e.label)}</div>`).join('');
+    showTip(el, X(best.t)*rect.width/W, Y(best.v)*rect.height/H, `<div class="d">${fmtDate(best.d)}</div><div class="v">${fmtNum(best.v,opts.dp)} ${esc(opts.unit||'')}</div>${best.note?`<div class="d">${esc(best.note)}</div>`:''}${evs}`);
+  });
+  svg.querySelector('.hit').addEventListener('pointerleave',()=>{ tip.style.display='none'; xh.setAttribute('visibility','hidden'); });
+}
+function showTip(el,x,y,html){
+  const r=el.getBoundingClientRect();
+  tip.innerHTML=html; tip.style.display='block';
+  let left=r.left+window.scrollX+x; const tw=tip.offsetWidth;
+  left=Math.max(tw/2+6, Math.min(document.documentElement.clientWidth-tw/2-6, left));
+  tip.style.left=left+'px'; tip.style.top=(r.top+window.scrollY+y)+'px';
+}
+function niceTicks(lo,hi,n){
+  const span=hi-lo, step0=span/n, mag=Math.pow(10,Math.floor(Math.log10(step0))), norm=step0/mag;
+  const step=(norm<1.5?1:norm<3?2:norm<7?5:10)*mag;
+  const out=[]; for(let v=Math.ceil(lo/step)*step; v<=hi+1e-9; v+=step) out.push(+v.toFixed(10));
+  return out;
+}
+function fmtTick(v){ const a=Math.abs(v); return a>=1000? v.toLocaleString() : a>=10? String(Math.round(v)) : a>=1? (+v.toFixed(1)).toString() : (+v.toFixed(2)).toString(); }
+
+/* ------------------------------------------------------------------ render: chrome */
+function renderNav(){
+  $('#tankSeg').innerHTML = cfg().tanks.map(t=>`<button data-tank="${t.id}" class="${t.id===S.tank?'on':''}">${esc(t.name)}</button>`).join('');
+  const fa=filterAlerts(); const crit=fa.filter(a=>a.lvl==='crit').length, warn=fa.filter(a=>a.lvl==='warn').length;
+  document.querySelectorAll('#navSeg button').forEach(b=>{
+    b.classList.toggle('on', b.dataset.tab===S.tab);
+    if(b.dataset.tab==='rodi') b.innerHTML = 'RODI' + (crit?`<span class="badge">${crit}</span>`: warn?`<span class="badge warn">${warn}</span>`:'');
+  });
+  $('#tankSeg').classList.toggle('hide', S.tab==='rodi'||S.tab==='settings'||S.tab==='import'||!cfg().tanks.length);
+}
+function render(){
+  renderNav();
+  const v=$('#view');
+  tip.style.display='none';
+  if(cfg().tanks.length && !cfg().tanks.some(t=>t.id===S.tank)) S.tank=cfg().tanks[0].id;
+  if(!cfg().tanks.length && ['dashboard','log','history'].includes(S.tab)) renderWelcome(v);
+  else if(S.tab==='dashboard') renderDashboard(v);
+  else if(S.tab==='log') renderLog(v);
+  else if(S.tab==='history') renderHistory(v);
+  else if(S.tab==='rodi') renderRodi(v);
+  else if(S.tab==='import') renderImport(v);
+  else renderSettings(v);
+}
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-tank]'); if(t){ S.tank=t.dataset.tank; S.editingId=null; saveUi(); render(); return; }
+  const n=e.target.closest('#navSeg [data-tab]'); if(n){ S.tab=n.dataset.tab; if(S.tab!=='log') S.editingId=null; location.hash=S.tab==='dashboard'?'':S.tab; render(); window.scrollTo(0,0); return; }
+  const g=e.target.closest('[data-go]'); if(g){ S.tab=g.dataset.go; location.hash=S.tab; render(); window.scrollTo(0,0); }
+});
+window.addEventListener('hashchange',()=>{ const h=location.hash.slice(1); if(['dashboard','log','history','rodi','import','settings'].includes(h)&&h!==S.tab){ S.tab=h; render(); } });
+
+/* ------------------------------------------------------------------ dashboard */
+function renderDashboard(v){
+  const t=tankCfg(), es=sortedEntries(t.id), today=todayStr();
+  const alerts=[...filterAlerts().filter(a=>a.lvl!=='info'), ...paramAlerts(t.id)];
+  let h='';
+  if(S.db && !allLoaded() && !S.entries.length) { v.innerHTML='<div class="card muted">Loading your log…</div>'; return; }
+  if(alerts.length) h+=`<div class="alerts">${alerts.map(a=>`<div class="alert ${a.lvl}"><span>${a.lvl==='crit'?'⛔':'⚠️'}</span><div>${a.html}</div></div>`).join('')}</div>`;
+
+  // tiles
+  h+='<div class="grid tiles">';
+  t.params.forEach(p=>{
+    const withV=es.filter(e=>e.values&&e.values[p.key]!=null);
+    const last=withV[withV.length-1], prev=withV[withV.length-2];
+    const val=last?last.values[p.key]:null, st=status(p,val);
+    let sub='No readings yet';
+    if(last){
+      const ago=daysBetween(last.date,today);
+      const delta = prev? val-prev.values[p.key] : null;
+      sub = `${ago===0?'Today':ago===1?'Yesterday':ago+' days ago'}${delta!=null?` · ${delta>0?'+':''}${fmtNum(delta,p.dp)} vs prev`:''}`;
+      const wk=withV.filter(e=>daysBetween(e.date,last.date)<=7);
+      if(wk.length>=3){ const vs=wk.map(e=>e.values[p.key]); sub+=`<br>7-day swing ${fmtNum(Math.max(...vs)-Math.min(...vs),p.dp)} ${esc(p.unit)}`; }
+    }
+    h+=`<div class="card tile"><div class="lbl"><span>${esc(p.label)}</span>${chip(st)}</div><div class="val">${fmtNum(val,p.dp)}<small>${esc(p.unit)}</small></div><div class="sub">${sub}</div></div>`;
+  });
+  // water change tile
+  const wcs=es.filter(e=>(e.events||[]).some(x=>x.type==='water_change'));
+  const lastWc=wcs[wcs.length-1];
+  let wc30=0; es.filter(e=>daysBetween(e.date,today)<=30).forEach(e=>(e.events||[]).forEach(x=>wc30+=wcGallons(x,t.id)));
+  const wcEv = lastWc && lastWc.events.find(x=>x.type==='water_change');
+  h+=`<div class="card tile"><div class="lbl"><span>Last water change</span></div><div class="val">${lastWc?daysBetween(lastWc.date,today):'—'}<small>days ago</small></div><div class="sub">${lastWc?`${fmtDate(lastWc.date)} · ${evText(wcEv)}`:'None logged'}${wc30?`<br>${fmtNum(wc30,0)} gal in last 30 days`:''}</div></div>`;
+  h+='</div>';
+
+  // toolbar
+  h+=`<div class="toolbar"><span class="lab">Range</span><div class="seg sm" id="rangeSeg">${[['30','30 d'],['90','90 d'],['182','6 mo'],['365','1 yr'],['all','All']].map(([k,l])=>`<button data-range="${k}" class="${S.range===k?'on':''}">${l}</button>`).join('')}</div>
+    <label class="legend" style="cursor:pointer"><input type="checkbox" id="evToggle" ${S.showEvents?'checked':''}> Show events</label>
+    <div class="spacer"></div>
+    <div class="legend"><span><i style="width:16px;height:2px;background:var(--series)"></i>Reading</span><span><i style="width:12px;height:10px;background:var(--band);border:1px dashed var(--band-line)"></i>Target</span><span><i style="width:7px;height:7px;border-radius:50%;background:var(--crit)"></i>Out of range</span>${S.showEvents?`<span><i style="width:8px;height:8px;border-radius:50%;background:var(--series-3)"></i>Water change</span>${t.kind==='reef'?`<span><i style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:8px solid var(--series-2)"></i>Rowaphos</span>`:''}<span><i style="width:7px;height:7px;background:var(--muted);border-radius:1px"></i>Note</span>`:''}</div></div>`;
+  h+='<div class="grid charts" id="chartGrid">';
+  t.params.forEach(p=>{ h+=`<div class="card chart-card"><div class="chart-head"><h3>${esc(p.label)} <span class="muted small">${esc(p.unit)}</span></h3><span class="meta">Target ${fmtNum(p.low,p.dp)}–${fmtNum(p.high,p.dp)}</span></div><div class="chart" data-param="${p.key}"></div></div>`; });
+  t.doses.forEach(d=>{ if(es.some(e=>e.doses&&e.doses[d.key]!=null)) h+=`<div class="card chart-card"><div class="chart-head"><h3>Dosing · ${esc(d.label)} <span class="muted small">${esc(d.unit)}</span></h3><span class="meta" data-dosesum="${d.key}"></span></div><div class="chart" data-dose="${d.key}"></div></div>`; });
+  h+='</div>';
+  v.innerHTML=h;
+  v.querySelectorAll('#rangeSeg button').forEach(b=>b.onclick=()=>{ S.range=b.dataset.range; saveUi(); renderDashboard(v); });
+  $('#evToggle').onchange=e=>{ S.showEvents=e.target.checked; renderDashboard(v); };
+  drawCharts();
+}
+function drawCharts(){
+  const t=tankCfg(), es=sortedEntries(t.id);
+  if(!es.length){ document.querySelectorAll('#chartGrid .chart').forEach(c=>c.innerHTML='<div class="empty">No readings yet — add one under Log entry</div>'); return; }
+  const xMax=toMs(todayStr());
+  const xMin = S.range==='all' ? toMs(es[0].date) : xMax - Number(S.range)*DAY;
+  const inR=es.filter(e=>toMs(e.date)>=xMin);
+  const events=[];
+  if(S.showEvents) inR.forEach(e=>(e.events||[]).forEach(x=>events.push({t:toMs(e.date),kind:x.type==='water_change'?'wc':x.type==='rowaphos'?'rowa':'note',label:evText(x,t.id)})));
+  document.querySelectorAll('#chartGrid .chart[data-param]').forEach(el=>{
+    const p=t.params.find(q=>q.key===el.dataset.param);
+    const pts=inR.filter(e=>e.values&&e.values[p.key]!=null).map(e=>({t:toMs(e.date),v:e.values[p.key],d:e.date,note:e.note&&e.note.includes(p.key.toUpperCase())?e.note:''}));
+    chartSvg(el,{points:pts,low:p.low,high:p.high,dp:p.dp,unit:p.unit,xMin,xMax,events,title:p.label});
+  });
+  document.querySelectorAll('#chartGrid .chart[data-dose]').forEach(el=>{
+    const d=t.doses.find(q=>q.key===el.dataset.dose);
+    const pts=inR.filter(e=>e.doses&&e.doses[d.key]!=null).map(e=>({t:toMs(e.date),v:e.doses[d.key],d:e.date}));
+    const sum=pts.reduce((s,p)=>s+p.v,0); const m=document.querySelector(`[data-dosesum="${d.key}"]`); if(m) m.textContent= pts.length?`${fmtNum(sum,0)} ${d.unit} total in range`:'';
+    chartSvg(el,{points:pts,dp:1,unit:d.unit,xMin,xMax,bars:true,title:d.label});
+  });
+}
+let rzT; window.addEventListener('resize',()=>{ clearTimeout(rzT); rzT=setTimeout(()=>{ if(S.tab==='dashboard') drawCharts(); },120); });
+
+/* ------------------------------------------------------------------ log entry */
+function renderLog(v){
+  const t=tankCfg();
+  const e = S.editingId ? S.entries.find(x=>x.id===S.editingId) : null;
+  if(S.editingId && !e){ S.editingId=null; }
+  const ev=(e&&e.events)||[];
+  const wc=ev.find(x=>x.type==='water_change'), rw=ev.find(x=>x.type==='rowaphos');
+  const notes=ev.filter(x=>x.type==='note'||x.type==='maintenance').map(x=>x.type==='maintenance'?x.text:x.text);
+  const noteText=[...notes, e&&e.note?e.note:''].filter(Boolean).join('\n');
+  let h=`<div class="card"><h2>${e?'Edit entry':'New entry'} · ${esc(t.name)}</h2><form id="logForm" autocomplete="off">
+  <fieldset><div class="row"><label class="f">Date<input type="date" name="date" required value="${e?e.date:todayStr()}"></label></div></fieldset>
+  <fieldset><legend class="h">Test results</legend><div class="row">${t.params.map(p=>`<label class="f">${esc(p.label)} <span class="u">${esc(p.unit)} · target ${fmtNum(p.low,p.dp)}–${fmtNum(p.high,p.dp)}</span><input type="number" step="any" inputmode="decimal" name="v_${p.key}" value="${e&&e.values&&e.values[p.key]!=null?e.values[p.key]:''}"></label>`).join('')}</div></fieldset>
+  <fieldset><legend class="h">Dosing</legend><div class="row">${t.doses.map(d=>`<label class="f">${esc(d.label)} <span class="u">${esc(d.unit)}</span><input type="number" step="any" inputmode="decimal" name="d_${d.key}" value="${e&&e.doses&&e.doses[d.key]!=null?e.doses[d.key]:''}"></label>`).join('')}</div></fieldset>
+  <fieldset><legend class="h">Maintenance</legend><div class="row">
+    <label class="f">Water change <span class="u">gallons</span><input type="number" step="any" name="wc_gal" value="${wc&&wc.gallons!=null?wc.gallons:''}"></label>
+    <label class="f">Water change <span class="u">% of tank</span><input type="number" step="any" name="wc_pct" value="${wc&&wc.percent!=null?wc.percent:''}"></label>
+    ${t.kind==='reef'?`<label class="f">Rowaphos added/replaced <span class="u">grams</span><input type="number" step="any" name="rowa" value="${rw?rw.grams:''}"></label>`:''}
+  </div>
+  <label class="f" style="margin-top:10px">Notes <span class="u">one per line — equipment changes, observations, new livestock…</span><textarea name="notes">${esc(noteText)}</textarea></label></fieldset>
+  <div class="actions"><button class="btn primary" type="submit" ${S.canWrite?'':'disabled'}>${e?'Save changes':'Save entry'}</button>${e?'<button class="btn" type="button" id="cancelEdit">Cancel</button><div class="spacer"></div><button class="btn danger" type="button" id="delEntry">Delete entry</button>':''}</div>
+  </form></div>`;
+  // recent entries quick view
+  const recent=sortedEntries(t.id).slice(-5).reverse();
+  if(!e && recent.length) h+=`<div class="card" style="margin-top:12px"><h2>Recent ${esc(t.name)} entries</h2>${entryTable(recent,t,true)}</div>`;
+  v.innerHTML=h;
+  const f=$('#logForm');
+  f.onsubmit=async ev2=>{
+    ev2.preventDefault();
+    const fd=new FormData(f), data={tank:t.id,date:fd.get('date'),values:{},doses:{},events:[],note:''};
+    t.params.forEach(p=>{ const n=num(fd.get('v_'+p.key)); if(n!=null) data.values[p.key]=n; });
+    t.doses.forEach(d=>{ const n=num(fd.get('d_'+d.key)); if(n!=null) data.doses[d.key]=n; });
+    const g=num(fd.get('wc_gal')), pc=num(fd.get('wc_pct'));
+    if(g!=null||pc!=null){ const w={type:'water_change'}; if(g!=null) w.gallons=g; if(pc!=null) w.percent=pc; data.events.push(w); }
+    const r=num(fd.get('rowa')); if(r!=null) data.events.push({type:'rowaphos',grams:r});
+    String(fd.get('notes')||'').split('\n').map(s=>s.trim()).filter(Boolean).forEach(s=>data.events.push({type:'note',text:s}));
+    if(!Object.keys(data.values).length && !Object.keys(data.doses).length && !data.events.length){ toast('Nothing to save — enter at least one value'); return; }
+    data.updatedAt=new Date().toISOString();
+    const id = e ? e.id : null;
+    const ok = await write(db=> id ? db.doc('entries/'+id).set(data) : db.collection('entries').add(data), id?'Entry updated':'Entry saved');
+    if(ok){ S.editingId=null; renderLog(v); }
+  };
+  if(e){
+    $('#cancelEdit').onclick=()=>{ S.editingId=null; S.tab='history'; render(); };
+    $('#delEntry').onclick=()=>confirmInline($('#delEntry'),'Delete this entry?',async()=>{ const ok=await write(db=>db.doc('entries/'+e.id).delete(),'Entry deleted'); if(ok){ S.editingId=null; S.tab='history'; render(); } });
+  }
+  bindEdit(v);
+}
+function confirmInline(btn,msg,fn){
+  const wrap=document.createElement('span'); wrap.className='actions'; wrap.style.margin='0';
+  wrap.innerHTML=`<span class="small">${esc(msg)}</span><button class="btn sm danger" type="button">Yes</button><button class="btn sm" type="button">No</button>`;
+  btn.replaceWith(wrap);
+  const [y,n]=wrap.querySelectorAll('button'); y.onclick=fn; n.onclick=()=>wrap.replaceWith(btn);
+}
+
+/* ------------------------------------------------------------------ history */
+function entryTable(list,t,compact){
+  let h=`<div class="tablewrap"><table><thead><tr><th>Date</th>${t.params.map(p=>`<th class="n">${esc(p.label)}<br><span class="muted small">${esc(p.unit)}</span></th>`).join('')}${compact?'':t.doses.map(d=>`<th class="n">${esc(d.label)}<br><span class="muted small">${esc(d.unit)}</span></th>`).join('')}<th>Events & notes</th><th></th></tr></thead><tbody>`;
+  list.forEach(e=>{
+    h+=`<tr><td style="white-space:nowrap">${fmtDate(e.date)}</td>`;
+    t.params.forEach(p=>{ const val=e.values?e.values[p.key]:null; const st=status(p,val); h+=`<td class="n">${val==null?'<span class="muted">·</span>':`<span class="${st==='ok'?'':'out'}">${fmtNum(val,p.dp)}</span>`}</td>`; });
+    if(!compact) t.doses.forEach(d=>{ const val=e.doses?e.doses[d.key]:null; h+=`<td class="n">${val==null?'<span class="muted">·</span>':fmtNum(val,1)}</td>`; });
+    const evs=(e.events||[]).map(x=>`<span class="ev">${esc(evText(x,e.tank))}</span>`).join('')+(e.note?`<span class="ev">${esc(e.note)}</span>`:'');
+    h+=`<td>${evs}</td><td><button class="btn sm" data-edit="${e.id}">Edit</button></td></tr>`;
+  });
+  return h+'</tbody></table></div>';
+}
+function bindEdit(v){ v.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{ S.editingId=b.dataset.edit; S.tab='log'; render(); window.scrollTo(0,0); }); }
+function renderHistory(v){
+  const t=tankCfg(); let es=sortedEntries(t.id).reverse();
+  const f=S.histParamFilter;
+  if(f==='tests') es=es.filter(e=>e.values&&Object.keys(e.values).length);
+  if(f==='events') es=es.filter(e=>(e.events||[]).length);
+  if(f==='doses') es=es.filter(e=>e.doses&&Object.keys(e.doses).length);
+  let h=`<div class="card"><div class="toolbar" style="margin-top:0"><h2 style="margin:0">${esc(t.name)} history</h2><span class="muted small">${es.length} entries</span><div class="spacer"></div>
+   <div class="seg sm" id="hf">${[['all','All'],['tests','Tests'],['doses','Dosing'],['events','Events']].map(([k,l])=>`<button data-hf="${k}" class="${f===k?'on':''}">${l}</button>`).join('')}</div>
+   <button class="btn sm" id="copyCsv">Download CSV</button></div>
+   ${es.length?entryTable(es,t,false):'<p class="muted">No entries yet.</p>'}<textarea id="csvOut" class="hide" style="margin-top:10px;height:140px"></textarea></div>`;
+  v.innerHTML=h;
+  v.querySelectorAll('[data-hf]').forEach(b=>b.onclick=()=>{ S.histParamFilter=b.dataset.hf; renderHistory(v); });
+  $('#copyCsv').onclick=async()=>{
+    const rows=[['date',...t.params.map(p=>`${p.label} (${p.unit})`),...t.doses.map(d=>`${d.label} (${d.unit})`),'events']];
+    sortedEntries(t.id).forEach(e=>rows.push([e.date,...t.params.map(p=>e.values&&e.values[p.key]!=null?e.values[p.key]:''),...t.doses.map(d=>e.doses&&e.doses[d.key]!=null?e.doses[d.key]:''),[...(e.events||[]).map(x=>evText(x,e.tank)),e.note].filter(Boolean).join('; ')]));
+    const csv=rows.map(r=>r.map(c=>{ c=String(c); return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c; }).join(',')).join('\n');
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+    a.download=`${t.name.toLowerCase().replace(/\W+/g,'-')}-log-${todayStr()}.csv`; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  };
+  bindEdit(v);
+}
+
+/* ------------------------------------------------------------------ RODI */
+function renderRodi(v){
+  const r=rodiCfg(), today=todayStr();
+  const alerts=filterAlerts(false);
+  let h='';
+  if(alerts.length) h+=`<div class="alerts">${alerts.map(a=>`<div class="alert ${a.lvl}"><span>${a.lvl==='crit'?'⛔':a.lvl==='warn'?'⚠️':'ℹ️'}</span><div>${a.html}</div></div>`).join('')}</div>`;
+  h+=`<div class="toolbar" style="margin-top:0"><h2 style="margin:0">Filter stages</h2><span class="muted small">Usage: ${r.mode==='logged'?'from logged RODI production':`estimated from water changes (${cfg().tanks.filter(t=>(r.includeTanks||[]).includes(t.id)).map(t=>esc(t.name)).join(', ')||'no tanks'}) + ${fmtNum(r.topoffPerDay,1)} gal/day top-off`}</span><div class="spacer"></div><button class="btn sm" id="addFilter" ${S.canWrite?'':'disabled'}>Add stage</button></div>`;
+  h+='<div class="grid filters">';
+  if(!S.filters.length) h+='<div class="card muted">No filter stages yet. Add your sediment, carbon, membrane and DI stages.</div>';
+  S.filters.forEach(f=>{
+    const u=filterUsage(f);
+    if(S.editingFilter===f.id){ h+=filterForm(f); return; }
+    h+=`<div class="card"><div class="chart-head"><h3>${esc(f.name)}</h3>${u?`<span class="chip ${u.st}">${u.st==='crit'?'⛔ Replace now':u.st==='warn'?'⚠ Due soon':'✓ OK'}</span>`:'<span class="chip na">Not tracking</span>'}</div>`;
+    if(u){
+      if(f.lifeDays){ const p=Math.min(1,u.pDays); h+=`<div class="kv"><span>Age</span><b>${u.days} / ${f.lifeDays} days</b></div><div class="bar ${u.pDays>=1?'crit':u.pDays>=r.warnPct/100?'warn':''}"><div style="width:${p*100}%"></div></div>`; }
+      if(f.lifeGallons){ const p=Math.min(1,u.pGal); h+=`<div class="kv"><span>${f.basis==='feed'?'Feed water':'Product water'}</span><b>${fmtNum(u.gal,0)} / ${fmtNum(f.lifeGallons,0)} gal</b></div><div class="bar ${u.pGal>=1?'crit':u.pGal>=r.warnPct/100?'warn':''}"><div style="width:${p*100}%"></div></div>`; }
+      else h+=`<div class="kv"><span>${f.basis==='feed'?'Feed water':'Product water'} (est.)</span><b>${fmtNum(u.gal,0)} gal</b></div><div class="small muted">Add a rated gallon capacity to alert on usage.</div>`;
+      if(f.tdsCheck){ const last=[...S.rodiLogs].reverse().find(l=>l.tdsOut!=null&&l.tdsOut!==''); h+=`<div class="kv" style="margin-top:4px"><span>Last TDS out (limit ${fmtNum(r.tdsLimit,1)})</span><b>${last?`${last.tdsOut} ppm · ${fmtDate(last.date)}`:'—'}</b></div>`; }
+      h+=`<div class="kv" style="margin-top:6px"><span>Installed</span><b>${fmtDate(f.installed)}</b></div>`;
+      if(u.due) h+=`<div class="kv"><span>Projected replacement</span><b>${fmtDate(msToStr(u.due))}</b></div>`;
+    } else h+=`<p class="small muted">Set the install date to start tracking.</p>`;
+    if(f.notes) h+=`<p class="small muted" style="margin:6px 0 0">${esc(f.notes)}</p>`;
+    if(f.history&&f.history.length) h+=`<details class="small" style="margin-top:6px"><summary class="muted" style="cursor:pointer">Replacement history (${f.history.length})</summary>${f.history.slice().reverse().map(x=>`<div class="kv"><span>${fmtDate(x.installed)} → ${fmtDate(x.replaced)}</span><b>${x.days} d${x.gallons!=null?` · ${fmtNum(x.gallons,0)} gal`:''}</b></div>`).join('')}</details>`;
+    if(S.replacing===f.id) h+=`<div class="inline-form"><label class="f">Replaced on<input type="date" id="repDate" value="${today}"></label><div class="actions"><button class="btn primary sm" data-repsave="${f.id}">Confirm replacement</button><button class="btn sm" data-repcancel>Cancel</button></div></div>`;
+    else h+=`<div class="actions" style="margin-top:10px"><button class="btn sm primary" data-replace="${f.id}" ${S.canWrite?'':'disabled'}>${f.installed?'Mark replaced':'Set install date'}</button><button class="btn sm" data-fedit="${f.id}" ${S.canWrite?'':'disabled'}>Edit</button></div>`;
+    h+='</div>';
+  });
+  if(S.editingFilter==='new') h+=filterForm({name:'',lifeDays:180,lifeGallons:null,basis:'feed',tdsCheck:false,notes:''});
+  h+='</div>';
+
+  // production / TDS log
+  h+=`<div class="two" style="margin-top:16px"><div class="card"><h2>Log RODI production / TDS</h2><form id="rodiForm"><div class="row">
+    <label class="f">Date<input type="date" name="date" value="${today}" required></label>
+    <label class="f">Gallons made<input type="number" step="any" name="gallons"></label>
+    <label class="f">TDS in <span class="u">ppm</span><input type="number" step="any" name="tdsIn"></label>
+    <label class="f">TDS out <span class="u">ppm, after DI</span><input type="number" step="any" name="tdsOut"></label></div>
+    <label class="f" style="margin-top:10px">Note<input type="text" name="note"></label>
+    <div class="actions"><button class="btn primary" type="submit" ${S.canWrite?'':'disabled'}>Save</button></div></form>
+    <p class="small muted">${r.mode==='logged'?'Gallon totals here drive usage-based alerts.':'Gallons logged here are kept for reference; usage alerts currently use the estimate (change in Settings).'} TDS out above ${fmtNum(r.tdsLimit,1)} ppm flags the DI stage.</p></div>
+    <div class="card"><h2>Recent RODI log</h2>${S.rodiLogs.length?`<div class="tablewrap" style="max-height:300px"><table><thead><tr><th>Date</th><th class="n">Gallons</th><th class="n">TDS in</th><th class="n">TDS out</th><th>Note</th><th></th></tr></thead><tbody>${S.rodiLogs.slice().reverse().slice(0,40).map(l=>`<tr><td>${fmtDate(l.date)}</td><td class="n">${l.gallons??''}</td><td class="n">${l.tdsIn??''}</td><td class="n">${l.tdsOut!=null&&l.tdsOut!==''?`<span class="${Number(l.tdsOut)>Number(r.tdsLimit)?'out':''}">${l.tdsOut}</span>`:''}</td><td>${esc(l.note||'')}</td><td><button class="btn sm" data-rdel="${l.id}">Delete</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Nothing logged yet.</p>'}</div></div>`;
+  v.innerHTML=h;
+
+  v.querySelectorAll('[data-replace]').forEach(b=>b.onclick=()=>{ S.replacing=b.dataset.replace; renderRodi(v); });
+  v.querySelectorAll('[data-repcancel]').forEach(b=>b.onclick=()=>{ S.replacing=null; renderRodi(v); });
+  v.querySelectorAll('[data-repsave]').forEach(b=>b.onclick=async()=>{
+    const f=S.filters.find(x=>x.id===b.dataset.repsave), d=$('#repDate').value; if(!d) return;
+    const hist=(f.history||[]).slice();
+    if(f.installed){ const u=filterUsage(f); hist.push({installed:f.installed,replaced:d,days:daysBetween(f.installed,d),gallons:u?Math.round(u.gal):null}); }
+    const ok=await write(db=>db.doc('filters/'+f.id).update({installed:d,history:hist}), f.installed?'Replacement logged':'Install date set');
+    if(ok){ S.replacing=null; renderRodi(v); }
+  });
+  v.querySelectorAll('[data-fedit]').forEach(b=>b.onclick=()=>{ S.editingFilter=b.dataset.fedit; renderRodi(v); });
+  $('#addFilter').onclick=()=>{ S.editingFilter='new'; renderRodi(v); };
+  const ff=$('#filterForm');
+  if(ff){
+    ff.onsubmit=async ev=>{ ev.preventDefault(); const fd=new FormData(ff);
+      const data={name:String(fd.get('name')).trim(),lifeDays:num(fd.get('lifeDays')),lifeGallons:num(fd.get('lifeGallons')),basis:fd.get('basis'),tdsCheck:fd.get('tdsCheck')==='on',notes:String(fd.get('notes')||'').trim(),installed:fd.get('installed')||null};
+      if(!data.name){ toast('Name required'); return; }
+      const id=S.editingFilter;
+      const ok=await write(db=> id==='new' ? db.collection('filters').add(Object.assign(data,{order:S.filters.length+1,history:[]})) : db.doc('filters/'+id).update(data), 'Saved');
+      if(ok){ S.editingFilter=null; renderRodi(v); } };
+    $('#cancelFilter').onclick=()=>{ S.editingFilter=null; renderRodi(v); };
+    const del=$('#delFilter'); if(del) del.onclick=()=>confirmInline(del,'Delete stage?',async()=>{ const ok=await write(db=>db.doc('filters/'+S.editingFilter).delete(),'Deleted'); if(ok){ S.editingFilter=null; renderRodi(v);} });
+  }
+  $('#rodiForm').onsubmit=async ev=>{ ev.preventDefault(); const fd=new FormData(ev.target);
+    const data={date:fd.get('date'),gallons:num(fd.get('gallons')),tdsIn:num(fd.get('tdsIn')),tdsOut:num(fd.get('tdsOut')),note:String(fd.get('note')||'').trim()};
+    if(data.gallons==null&&data.tdsIn==null&&data.tdsOut==null){ toast('Enter gallons or a TDS reading'); return; }
+    const ok=await write(db=>db.collection('rodi').add(data),'Logged'); if(ok) renderRodi(v); };
+  v.querySelectorAll('[data-rdel]').forEach(b=>b.onclick=()=>confirmInline(b,'Delete?',async()=>{ await write(db=>db.doc('rodi/'+b.dataset.rdel).delete(),'Deleted'); renderRodi(v); }));
+}
+function filterForm(f){
+  return `<div class="card"><form id="filterForm"><h3 style="margin-bottom:8px">${f.id?'Edit stage':'New stage'}</h3>
+  <label class="f">Name<input type="text" name="name" value="${esc(f.name)}" required></label>
+  <div class="row" style="margin-top:8px"><label class="f">Installed<input type="date" name="installed" value="${f.installed||''}"></label>
+  <label class="f">Life <span class="u">days</span><input type="number" name="lifeDays" value="${f.lifeDays??''}"></label>
+  <label class="f">Rated capacity <span class="u">gallons</span><input type="number" name="lifeGallons" value="${f.lifeGallons??''}"></label>
+  <label class="f">Gallons count<select name="basis"><option value="feed" ${f.basis==='feed'?'selected':''}>Feed water (pre-filters)</option><option value="product" ${f.basis!=='feed'?'selected':''}>Product water</option></select></label></div>
+  <label class="small" style="display:flex;gap:6px;align-items:center;margin-top:8px"><input type="checkbox" name="tdsCheck" ${f.tdsCheck?'checked':''}> Flag when TDS out exceeds the limit (DI stage)</label>
+  <label class="f" style="margin-top:8px">Notes<input type="text" name="notes" value="${esc(f.notes||'')}"></label>
+  <div class="actions"><button class="btn primary sm" type="submit">Save</button><button class="btn sm" type="button" id="cancelFilter">Cancel</button>${f.id?'<div class="spacer"></div><button class="btn sm danger" type="button" id="delFilter">Delete</button>':''}</div></form></div>`;
+}
+
+/* ------------------------------------------------------------------ welcome */
+function renderWelcome(v){
+  v.innerHTML=`<div class="card" style="max-width:640px;margin:30px auto;text-align:center;padding:28px">
+    <h2 style="font-size:18px">Welcome to Reef Tracker</h2>
+    <p class="muted">Add a tank to start logging, or import your existing records — paste straight from Google Sheets or upload a CSV.</p>
+    <div class="actions" style="justify-content:center;margin-top:14px"><button class="btn primary" data-go="settings">Add a tank</button><button class="btn" data-go="import">Import data</button></div></div>`;
+}
+
+/* ------------------------------------------------------------------ settings */
+function presetOptions(sel){ return Object.entries(Logic.TANK_PRESETS).map(([k,p])=>`<option value="${k}" ${k===sel?'selected':''}>${esc(p.label)}</option>`).join(''); }
+async function saveConfig(c, msg){ const ok=await write(db=>db.doc('config/main').set(c), msg||'Settings saved'); return ok; }
+function renderSettings(v){
+  const c=clean(cfg()), r=Object.assign({},DEFAULT_CONFIG.rodi,c.rodi||{});
+  let h=`<div class="card"><h2>Add a tank</h2><form id="addTank" class="row" style="align-items:end">
+    <label class="f">Name<input type="text" name="name" required placeholder="e.g. Frag tank"></label>
+    <label class="f">Type<select name="preset">${presetOptions('reef')}</select></label>
+    <label class="f">Volume <span class="u">gal</span><input type="number" step="any" name="volume"></label>
+    <label class="small" style="display:flex;gap:6px;align-items:center;padding-bottom:9px"><input type="checkbox" name="rodi" checked> Uses RODI water</label>
+    <div><button class="btn primary" type="submit">Add tank</button></div></form>
+    <p class="small muted" style="margin:8px 0 0">Each tank has its own parameters, targets and dosing products. All tanks share the RODI filter stages below.</p></div>`;
+
+  h+=`<form id="setForm">`;
+  c.tanks.forEach(t=>{
+    const n=S.entries.filter(e=>e.tank===t.id).length;
+    h+=`<div class="card" style="margin-top:12px"><div class="chart-head"><h2 style="margin:0">${esc(t.name)}</h2><span class="muted small">${n} entr${n===1?'y':'ies'}</span></div>
+    <div class="row" style="margin-top:8px"><label class="f">Name<input type="text" name="${t.id}_name" value="${esc(t.name)}"></label>
+      <label class="f">Volume <span class="u">gal — converts % water changes</span><input type="number" step="any" name="${t.id}_volume" value="${t.volume??''}"></label>
+      <label class="small" style="display:flex;gap:6px;align-items:center;padding-bottom:9px"><input type="checkbox" name="inc_${t.id}" ${(r.includeTanks||[]).includes(t.id)?'checked':''}> Count its water changes toward RODI usage</label></div>
+    <table class="ptable" style="margin-top:10px"><thead><tr><th>Parameter</th><th>Unit</th><th>Target low</th><th>Target high</th><th>Decimals</th><th>Remove</th></tr></thead><tbody>
+    ${t.params.map(p=>`<tr><td><input type="text" name="${t.id}_p_${p.key}_label" value="${esc(p.label)}"></td><td><input type="text" name="${t.id}_p_${p.key}_unit" value="${esc(p.unit)}"></td><td><input type="number" step="any" name="${t.id}_p_${p.key}_low" value="${p.low??''}"></td><td><input type="number" step="any" name="${t.id}_p_${p.key}_high" value="${p.high??''}"></td><td><input type="number" name="${t.id}_p_${p.key}_dp" value="${p.dp??1}"></td><td style="text-align:center"><input type="checkbox" name="${t.id}_p_${p.key}_rm" title="Hide this parameter (readings are kept)"></td></tr>`).join('')}
+    <tr><td><input type="text" name="${t.id}_newp_label" placeholder="Add parameter…"></td><td><input type="text" name="${t.id}_newp_unit" placeholder="unit"></td><td><input type="number" step="any" name="${t.id}_newp_low"></td><td><input type="number" step="any" name="${t.id}_newp_high"></td><td><input type="number" name="${t.id}_newp_dp" value="1"></td><td></td></tr></tbody></table>
+    <table class="ptable" style="margin-top:10px"><thead><tr><th>Dosing product</th><th>Unit</th><th>Remove</th></tr></thead><tbody>
+    ${t.doses.map(d=>`<tr><td><input type="text" name="${t.id}_d_${d.key}_label" value="${esc(d.label)}"></td><td><input type="text" name="${t.id}_d_${d.key}_unit" value="${esc(d.unit)}"></td><td style="text-align:center"><input type="checkbox" name="${t.id}_d_${d.key}_rm"></td></tr>`).join('')}
+    <tr><td><input type="text" name="${t.id}_newd_label" placeholder="Add product…"></td><td><input type="text" name="${t.id}_newd_unit" placeholder="ml"></td><td></td></tr></tbody></table>
+    <div class="actions" style="margin-top:10px"><button class="btn primary sm" type="submit">Save changes</button><div class="spacer"></div><button class="btn sm danger" type="button" data-deltank="${t.id}">Delete tank…</button></div></div>`;
+  });
+  h+=`<div class="card" style="margin-top:12px"><h2>RODI usage (shared by all tanks)</h2><div class="row">
+    <label class="f">Usage source<select name="mode"><option value="estimate" ${r.mode!=='logged'?'selected':''}>Estimate (water changes + top-off)</option><option value="logged" ${r.mode==='logged'?'selected':''}>Logged production</option></select></label>
+    <label class="f">Top-off use <span class="u">gal/day, all tanks</span><input type="number" step="any" name="topoffPerDay" value="${r.topoffPerDay}"></label>
+    <label class="f">Waste ratio <span class="u">gal waste per gal product</span><input type="number" step="any" name="wasteRatio" value="${r.wasteRatio}"></label>
+    <label class="f">DI TDS limit <span class="u">ppm</span><input type="number" step="any" name="tdsLimit" value="${r.tdsLimit}"></label>
+    <label class="f">Warn at <span class="u">% of life</span><input type="number" name="warnPct" value="${r.warnPct}"></label></div>
+    <div class="actions" style="margin-top:10px"><button class="btn primary sm" type="submit">Save changes</button></div></div></form>`;
+  const n=S.info&&S.info.notify;
+  h+=`<div class="two" style="margin-top:16px"><div class="card"><h2>Notifications</h2>
+    ${n?(n.configured?`<p class="small">Daily alert digest at ${n.hour}:00 (${esc(n.tz)}) via ${[n.ntfy?'ntfy':'',n.webhook?'webhook':''].filter(Boolean).join(' + ')}. Sent only on days with alerts.${n.lastNotified?` Last checked ${fmtDate(n.lastNotified)}.`:''}</p><div class="actions"><button class="btn sm" id="testNotify">Send test notification</button><span class="small muted" id="notifyResult"></span></div>`
+      :`<p class="small muted">Off. Set <code>NTFY_URL</code> (and optionally <code>NTFY_TOKEN</code>) or <code>WEBHOOK_URL</code> on the container to get a daily push when a filter is due or a parameter is out of range.</p>`):'<p class="small muted">Loading…</p>'}
+    </div><div class="card"><h2>Backup & restore</h2>
+    <p class="small muted">Everything lives in <code>/data/reef.db</code> on your server. Export a JSON copy any time; importing a JSON backup replaces all current data.</p>
+    <div class="actions"><a class="btn sm" href="/api/export" download>Export JSON</a><label class="btn sm" style="display:inline-block">Restore JSON…<input type="file" id="importFile" accept="application/json,.json" class="hide"></label><span class="small muted" id="importResult"></span></div></div></div>`;
+  v.innerHTML=h;
+
+  $('#addTank').onsubmit=async ev=>{ ev.preventDefault(); const fd=new FormData(ev.target);
+    const name=String(fd.get('name')).trim(); if(!name) return;
+    const t=Logic.makeTank(name, fd.get('preset'), c.tanks.map(x=>x.id)); t.volume=num(fd.get('volume'));
+    c.tanks.push(t); c.rodi=Object.assign({},r); c.rodi.includeTanks=[...(r.includeTanks||[])]; if(fd.get('rodi')==='on') c.rodi.includeTanks.push(t.id);
+    if(await saveConfig(c,`Added ${name}`)){ S.tank=t.id; saveUi(); renderSettings(v); } };
+  $('#setForm').onsubmit=async ev=>{
+    ev.preventDefault(); const fd=new FormData(ev.target);
+    c.rodi={mode:fd.get('mode'),topoffPerDay:num(fd.get('topoffPerDay'))??0,wasteRatio:num(fd.get('wasteRatio'))??0,tdsLimit:num(fd.get('tdsLimit'))??1,warnPct:num(fd.get('warnPct'))??80,includeTanks:c.tanks.filter(t=>fd.get('inc_'+t.id)==='on').map(t=>t.id)};
+    c.tanks.forEach(t=>{
+      t.name=String(fd.get(t.id+'_name')||t.name).trim()||t.name; t.volume=num(fd.get(t.id+'_volume'));
+      t.params.forEach(p=>{ p.label=String(fd.get(`${t.id}_p_${p.key}_label`)).trim()||p.label; p.unit=String(fd.get(`${t.id}_p_${p.key}_unit`)).trim(); p.low=num(fd.get(`${t.id}_p_${p.key}_low`)); p.high=num(fd.get(`${t.id}_p_${p.key}_high`)); p.dp=num(fd.get(`${t.id}_p_${p.key}_dp`))??1; });
+      t.params=t.params.filter(p=>fd.get(`${t.id}_p_${p.key}_rm`)!=='on');
+      const nl=String(fd.get(t.id+'_newp_label')||'').trim();
+      if(nl) t.params.push({key:Logic.uniqueKey(nl,t.params.map(p=>p.key)),label:nl,unit:String(fd.get(t.id+'_newp_unit')||'').trim(),low:num(fd.get(t.id+'_newp_low')),high:num(fd.get(t.id+'_newp_high')),dp:num(fd.get(t.id+'_newp_dp'))??1});
+      t.doses.forEach(d=>{ d.label=String(fd.get(`${t.id}_d_${d.key}_label`)).trim()||d.label; d.unit=String(fd.get(`${t.id}_d_${d.key}_unit`)).trim(); });
+      t.doses=t.doses.filter(d=>fd.get(`${t.id}_d_${d.key}_rm`)!=='on');
+      const dl=String(fd.get(t.id+'_newd_label')||'').trim();
+      if(dl) t.doses.push({key:Logic.uniqueKey(dl,t.doses.map(d=>d.key)),label:dl,unit:String(fd.get(t.id+'_newd_unit')||'ml').trim()||'ml'});
+    });
+    if(await saveConfig(c)) renderSettings(v);
+  };
+  v.querySelectorAll('[data-deltank]').forEach(b=>b.onclick=()=>{ const t=c.tanks.find(x=>x.id===b.dataset.deltank); const n=S.entries.filter(e=>e.tank===t.id).length;
+    confirmInline(b,`Delete ${t.name}${n?` and its ${n} entries`:''}? This can’t be undone.`,async()=>{ const ok=await write(()=>req('POST',`/api/tanks/${encodeURIComponent(t.id)}/delete`),`Deleted ${t.name}`); if(ok) renderSettings(v); }); });
+  const tn=$('#testNotify'); if(tn) tn.onclick=async()=>{ tn.disabled=true; $('#notifyResult').textContent='Sending…'; try{ const r=await req('POST','/api/notify/test'); $('#notifyResult').textContent=r.sent?`Sent (${(r.results||[]).join(', ')})`:r.reason; }catch(e){ $('#notifyResult').textContent='Failed: '+e.message; } tn.disabled=false; };
+  $('#importFile').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; const out=$('#importResult');
+    try{ const data=JSON.parse(await f.text()); out.textContent='Restoring…'; const r=await req('POST','/api/import',data); await loadState(); out.textContent=''; toast(`Restored ${r.entries} entries`); }
+    catch(err){ out.textContent='Restore failed: '+err.message; } };
+}
+
+/* ------------------------------------------------------------------ import */
+const IMP = { text:'', tankId:null, newName:'', newPreset:'reef', mapping:null, replace:false, result:null };
+const KIND_LABEL = {date:'Date',param:'Parameter',dose:'Dosing',newparam:'New parameter',newdose:'New dosing product',notes:'Events & notes',ignore:'Ignore'};
+function impTank(){
+  if(IMP.tankId && IMP.tankId!=='__new') return clean(cfg().tanks.find(t=>t.id===IMP.tankId)||null);
+  const t=Logic.makeTank(IMP.newName||'New tank', IMP.newPreset, cfg().tanks.map(x=>x.id)); return t;
+}
+function renderImport(v){
+  if(IMP.tankId===null) IMP.tankId = cfg().tanks.some(t=>t.id===S.tank) ? S.tank : (cfg().tanks[0]?cfg().tanks[0].id:'__new');
+  let h=`<div class="card"><h2>Import or paste data</h2>
+   <p class="small muted" style="margin-top:-4px">In Google Sheets, select a tab’s rows (header row included) and copy, then paste below — or load a CSV export. Works for a one-off import of years of history or a few new rows. Text such as “10 gallon water change”, “40% water change”, “75g Rowaphos” or “added 30g of buffer” becomes events and doses.</p>
+   <div class="row" style="align-items:end">
+     <label class="f">Into tank<select id="impTank">${cfg().tanks.map(t=>`<option value="${t.id}" ${IMP.tankId===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}<option value="__new" ${IMP.tankId==='__new'?'selected':''}>+ New tank…</option></select></label>
+     ${IMP.tankId==='__new'?`<label class="f">New tank name<input type="text" id="impNewName" value="${esc(IMP.newName)}" placeholder="e.g. Reef"></label><label class="f">Type<select id="impPreset">${presetOptions(IMP.newPreset)}</select></label>`:''}
+     <label class="btn sm" style="display:inline-block;width:max-content;margin-bottom:2px">Load CSV file…<input type="file" id="impFile" accept=".csv,.tsv,.txt,text/csv" class="hide"></label>
+   </div>
+   <textarea id="impText" style="margin-top:10px;min-height:150px;font-family:ui-monospace,Menlo,monospace;font-size:12px" placeholder="Paste here…">${esc(IMP.text)}</textarea>
+   <div class="actions"><button class="btn primary" id="impPreview">Preview</button>${IMP.text?'<button class="btn" id="impClear">Clear</button>':''}</div></div>`;
+  if(IMP.mapping && IMP.result){
+    const t=impTank(), m=IMP.mapping, r=IMP.result;
+    const opts=item=>{
+      const o=[['ignore','Ignore'],['date','Date'],['notes','Events & notes']];
+      t.params.forEach(p=>o.push(['param:'+p.key,'Parameter: '+p.label]));
+      t.doses.forEach(d=>o.push(['dose:'+d.key,'Dosing: '+d.label]));
+      o.push(['newparam','New parameter “'+Logic.slug(item.header)+'”'],['newdose','New dosing product']);
+      const cur=item.kind==='param'||item.kind==='dose'?item.kind+':'+item.key:item.kind;
+      return o.map(([k,l])=>`<option value="${k}" ${k===cur?'selected':''}>${esc(l)}</option>`).join('');
+    };
+    h+=`<div class="card" style="margin-top:12px"><h2>Columns</h2><div class="tablewrap" style="max-height:none"><table><thead><tr><th>Pasted column</th><th>Sample</th><th>Use as</th></tr></thead><tbody>
+      ${m.map.map((it,i)=>{ const body=m.hasHeader?IMP.rows.slice(1):IMP.rows; const sample=body.map(r=>r[it.col]).filter(Boolean).slice(0,3).join(' · ');
+        return `<tr><td>${esc(it.header)}</td><td class="muted small">${esc(sample.slice(0,80))}</td><td><select data-map="${i}">${opts(it)}</select></td></tr>`; }).join('')}
+      </tbody></table></div>
+      <label class="small" style="display:flex;gap:6px;align-items:center;margin-top:8px"><input type="checkbox" id="impHeader" ${m.hasHeader?'checked':''}> First row is a header</label></div>`;
+    const tests=r.entries.filter(e=>Object.keys(e.values).length).length, evs=r.entries.reduce((s,e)=>s+e.events.length,0), ds=r.entries.filter(e=>Object.keys(e.doses).length).length;
+    const range=r.entries.length?`${fmtDate(r.entries.map(e=>e.date).sort()[0])} – ${fmtDate(r.entries.map(e=>e.date).sort().pop())}`:'';
+    const existing=IMP.tankId!=='__new'?S.entries.filter(e=>e.tank===IMP.tankId).length:0;
+    const allParams=[...t.params,...r.newParams], allDoses=[...t.doses,...r.newDoses];
+    const usedP=allParams.filter(p=>r.entries.some(e=>e.values[p.key]!=null)), usedD=allDoses.filter(d=>r.entries.some(e=>e.doses[d.key]!=null));
+    h+=`<div class="card" style="margin-top:12px"><h2>Preview</h2>
+      <p class="small"><b>${r.entries.length}</b> entries ${range?`(${range})`:''} · ${tests} with test results · ${ds} with dosing · ${evs} events${r.newParams.length?` · new parameters: ${r.newParams.map(p=>esc(p.label)).join(', ')}`:''}${r.newDoses.length?` · new dosing products: ${r.newDoses.map(d=>esc(d.label)+' ('+esc(d.unit)+')').join(', ')}`:''}</p>
+      ${r.warnings.length?`<div class="alerts">${r.warnings.slice(0,8).map(w=>`<div class="alert warn"><span>⚠️</span><div>${esc(w)}</div></div>`).join('')}${r.warnings.length>8?`<div class="small muted">…and ${r.warnings.length-8} more</div>`:''}</div>`:''}
+      ${r.entries.length?`<div class="tablewrap" style="max-height:340px"><table><thead><tr><th>Date</th>${usedP.map(p=>`<th class="n">${esc(p.label)}</th>`).join('')}${usedD.map(d=>`<th class="n">${esc(d.label)}</th>`).join('')}<th>Events & notes</th></tr></thead><tbody>
+        ${r.entries.slice(-200).reverse().map(e=>`<tr><td style="white-space:nowrap">${fmtDate(e.date)}</td>${usedP.map(p=>`<td class="n">${e.values[p.key]!=null?fmtNum(e.values[p.key],p.dp):'<span class="muted">·</span>'}</td>`).join('')}${usedD.map(d=>`<td class="n">${e.doses[d.key]!=null?fmtNum(e.doses[d.key],1):'<span class="muted">·</span>'}</td>`).join('')}<td>${e.events.map(x=>`<span class="ev">${esc(evText(x))}</span>`).join('')}${e.note?`<span class="ev">${esc(e.note)}</span>`:''}</td></tr>`).join('')}
+        </tbody></table></div>${r.entries.length>200?`<p class="small muted">Showing the latest 200.</p>`:''}`:''}
+      <div class="actions" style="margin-top:10px">
+        ${existing?`<label class="small" style="display:flex;gap:6px;align-items:center;margin-right:10px"><input type="checkbox" id="impReplace" ${IMP.replace?'checked':''}> Replace the ${existing} existing entries in this tank (otherwise add to them)</label>`:''}
+        <button class="btn primary" id="impGo" ${r.entries.length?'':'disabled'}>Import ${r.entries.length} entries${IMP.tankId==='__new'?` into new tank “${esc(IMP.newName||'New tank')}”`:''}</button></div></div>`;
+  }
+  v.innerHTML=h;
+  const rerender=()=>{ renderImport(v); };
+  $('#impTank').onchange=e=>{ IMP.tankId=e.target.value; IMP.text=$('#impText').value; if(IMP.text) preview(); rerender(); };
+  const nn=$('#impNewName'); if(nn) nn.onchange=e=>{ IMP.newName=e.target.value; IMP.text=$('#impText').value; if(IMP.result){ preview(); rerender(); } };
+  const np=$('#impPreset'); if(np) np.onchange=e=>{ IMP.newPreset=e.target.value; IMP.text=$('#impText').value; if(IMP.text) preview(); rerender(); };
+  $('#impFile').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; IMP.text=await f.text(); if(IMP.tankId==='__new'&&!IMP.newName) IMP.newName=f.name.replace(/\.[^.]+$/,'').replace(/^.* - /,''); preview(); rerender(); };
+  $('#impPreview').onclick=()=>{ IMP.text=$('#impText').value; if(!IMP.text.trim()){ toast('Paste some rows first'); return; } preview(); rerender(); };
+  const cl=$('#impClear'); if(cl) cl.onclick=()=>{ Object.assign(IMP,{text:'',mapping:null,result:null,rows:null}); rerender(); };
+  v.querySelectorAll('[data-map]').forEach(sel=>sel.onchange=()=>{ const it=IMP.mapping.map[+sel.dataset.map]; const [k,key]=sel.value.split(':'); it.kind=k; it.key=key||null;
+    if(k==='date') IMP.mapping.map.forEach((o,i)=>{ if(i!==+sel.dataset.map && o.kind==='date') o.kind='ignore'; });
+    IMP.result=Logic.convertRows(IMP.rows, IMP.mapping, impTank()); rerender(); });
+  const hd=$('#impHeader'); if(hd) hd.onchange=e=>{ IMP.mapping.hasHeader=e.target.checked; IMP.result=Logic.convertRows(IMP.rows, IMP.mapping, impTank()); rerender(); };
+  const rp=$('#impReplace'); if(rp) rp.onchange=e=>{ IMP.replace=e.target.checked; };
+  const go=$('#impGo'); if(go) go.onclick=async()=>{
+    go.disabled=true;
+    const c=clean(cfg()); let t;
+    if(IMP.tankId==='__new'){
+      if(!IMP.newName.trim()){ toast('Name the new tank first'); go.disabled=false; return; }
+      t=impTank(); c.tanks.push(t); const pr=Logic.TANK_PRESETS[IMP.newPreset]; if(pr&&pr.rodi){ c.rodi=Object.assign({},DEFAULT_CONFIG.rodi,c.rodi||{}); c.rodi.includeTanks=[...(c.rodi.includeTanks||[]),t.id]; }
+    } else t=c.tanks.find(x=>x.id===IMP.tankId);
+    const r=Logic.convertRows(IMP.rows, IMP.mapping, t);
+    t.params.push(...r.newParams); t.doses.push(...r.newDoses);
+    const entries=r.entries.map(e=>Object.assign(e,{tank:t.id,updatedAt:new Date().toISOString()}));
+    const ok=await write(()=>req('POST','/api/bulk',{entries, config:c, replaceTank: IMP.replace && IMP.tankId!=='__new' ? t.id : null}), `Imported ${entries.length} entries into ${t.name}`);
+    if(ok){ Object.assign(IMP,{text:'',mapping:null,result:null,rows:null,tankId:t.id,newName:'',replace:false}); S.tank=t.id; saveUi(); S.tab='dashboard'; location.hash=''; render(); }
+    else go.disabled=false;
+  };
+  function preview(){
+    IMP.rows=Logic.parseTable(IMP.text);
+    const t=impTank();
+    IMP.mapping=Logic.guessMapping(IMP.rows, t);
+    IMP.result=Logic.convertRows(IMP.rows, IMP.mapping, t);
+  }
+}
+
+/* ------------------------------------------------------------------ boot */
+(function(){ const h=location.hash.slice(1); if(['log','history','rodi','import','settings'].includes(h)) S.tab=h; })();
+render();
+initDb();
+</script>
+</body>
+</html>

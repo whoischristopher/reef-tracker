@@ -1,0 +1,28 @@
+# Portainer: Stacks → Add stack → Repository (this repo) or paste this file into the Web editor.
+services:
+  reef-tracker:
+    image: ghcr.io/whoischristopher/reef-tracker:latest
+    # To build on the Docker host instead of pulling the image from GHCR, comment out
+    # "image" above and uncomment "build" below.
+    # build: .
+    container_name: reef-tracker
+    restart: unless-stopped
+    ports:
+      - "8087:8080"
+    volumes:
+      # Keep this on local disk (not an NFS share): SQLite locking is unreliable over NFS.
+      - reef-data:/data
+    environment:
+      TZ: America/Toronto
+      # Daily alert digest (optional). Leave blank to disable.
+      NTFY_URL: ${NTFY_URL:-}          # e.g. https://ntfy.sh/your-secret-topic or http://ntfy.lan/reef
+      NTFY_TOKEN: ${NTFY_TOKEN:-}      # only for a protected ntfy topic
+      WEBHOOK_URL: ${WEBHOOK_URL:-}    # e.g. Home Assistant webhook; receives {title, message, url}
+      NOTIFY_HOUR: ${NOTIFY_HOUR:-9}   # local hour (0–23) to send the digest
+      APP_URL: ${APP_URL:-}            # link opened when you tap the notification
+      # Optional HTTP basic auth (recommended if exposed beyond your LAN).
+      AUTH_USER: ${AUTH_USER:-}
+      AUTH_PASS: ${AUTH_PASS:-}
+
+volumes:
+  reef-data:
