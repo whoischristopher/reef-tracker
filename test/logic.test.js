@@ -13,19 +13,40 @@ test('time-based filter goes warn then crit', () => {
   assert.equal(L.filterUsage(base({ today: '2026-07-01' }), f).st, 'ok');
 });
 
-test('feed-water usage counts water changes, top-off and waste ratio', () => {
-  const entries = [{ tank: 'reef', date: '2026-11-01', events: [{ type: 'water_change', gallons: 10 }] }];
+test('usage = RODI log + top-off estimate; feed water adds waste ratio', () => {
+  const rodiLogs = [
+    { date: '2026-11-01', kind: 'water_change', source: 'auto', gallons: 10 },
+    { date: '2026-11-02', kind: 'topoff', gallons: 5 },
+    { date: '2026-10-01', kind: 'topoff', gallons: 99 }, // before install
+  ];
   const f = { name: 'Carbon', installed: '2026-10-26', lifeGallons: 100, basis: 'feed' };
-  const u = L.filterUsage(base({ entries }), f);
-  // product = 10 gal WC + 1 gal/day * 10 days = 20; feed = 20 * (1 + 3) = 80
-  assert.equal(u.gal, 80);
-  assert.equal(u.st, 'warn');
+  const u = L.filterUsage(base({ rodiLogs }), f);
+  // product = 10 WC + 5 refill + 1 gal/day * 10 days = 25; feed = 25 * (1 + 3) = 100
+  assert.deepEqual(u.breakdown, { water_change: 10, topoff: 5, other: 0, topoffEst: 10 });
+  assert.equal(u.gal, 100);
+  assert.equal(u.st, 'crit');
 });
 
-test('percent water changes use tank volume', () => {
-  const entries = [{ tank: 'reef', date: '2026-11-01', events: [{ type: 'water_change', percent: 20 }] }];
-  const f = { name: 'Membrane', installed: '2026-11-01', lifeGallons: 1000, basis: 'product' };
-  assert.equal(L.filterUsage(base({ entries }), f).gal, 15 + 4); // 20% of 75 gal + 4 days top-off
+test('water changes in RODI tanks become auto RODI log rows (% converted by volume)', () => {
+  const entries = [
+    { id: 'a', tank: 'reef', date: '2026-11-01', waterChange: { percent: 20 } },
+    { id: 'b', tank: 'reef', date: '2026-11-02', waterChange: { gallons: 10 } },
+    { id: 'c', tank: 'other', date: '2026-11-02', waterChange: { gallons: 5 } },
+    { id: 'd', tank: 'reef', date: '2026-11-03', values: { ca: 420 } },
+  ];
+  const logs = L.autoRodiLogs(base({ entries }));
+  assert.deepEqual(Object.keys(logs), ['wc-a', 'wc-b']);
+  assert.equal(logs['wc-a'].gallons, 15);
+  assert.equal(logs['wc-b'].kind, 'water_change');
+});
+
+test('normalizeEntry moves water change / Rowaphos events into fields', () => {
+  const e = L.normalizeEntry({ tank: 'reef', date: '2026-06-10', values: {}, doses: {}, events: [
+    { type: 'water_change', gallons: 10 }, { type: 'rowaphos', grams: 75 }, { type: 'note', text: 'Levelled the reactor' }] });
+  assert.deepEqual(e.waterChange, { gallons: 10 });
+  assert.deepEqual(e.gfo, { grams: 75 });
+  assert.deepEqual(e.events, [{ type: 'note', text: 'Levelled the reactor' }]);
+  assert.deepEqual(L.normalizeEntry(e), e); // idempotent
 });
 
 test('DI flags on TDS out above limit', () => {
@@ -59,7 +80,9 @@ test('paste from Google Sheets: header mapping, events in value columns, inherit
   assert.deepEqual(m.map.map((x) => x.kind + (x.key ? ':' + x.key : '')), ['date', 'param:ca', 'param:po4', 'param:alk', 'newdose']);
   const r = L.convertRows(rows, m, t);
   assert.equal(r.entries.length, 2);
-  assert.deepEqual(r.entries[0].events, [{ type: 'rowaphos', grams: 92 }, { type: 'water_change', gallons: 10 }]);
+  assert.deepEqual(r.entries[0].gfo, { grams: 92 });
+  assert.deepEqual(r.entries[0].waterChange, { gallons: 10 });
+  assert.deepEqual(r.entries[0].events, []);
   assert.equal(r.newDoses[0].unit, 'ml');
   assert.equal(r.entries[0].doses[r.newDoses[0].key], 60);
 });
@@ -70,7 +93,7 @@ test('notes column: % water change and "added Xg of" doses (auto-created)', () =
   const rows = L.parseTable(csv);
   const r = L.convertRows(rows, L.guessMapping(rows, t), t);
   assert.deepEqual(r.newDoses.map((d) => d.label), ['Lake salt', 'Buffer']);
-  assert.deepEqual(r.entries[0].events, [{ type: 'water_change', percent: 40 }]);
+  assert.deepEqual(r.entries[0].waterChange, { percent: 40 });
   assert.deepEqual(r.entries[0].doses, { lake_salt: 22, buffer: 10 });
   assert.deepEqual(r.entries[1].doses, { buffer: 15 });
 });
@@ -90,4 +113,13 @@ test('dates in several formats', () => {
   assert.equal(L.parseDate('25/10/2026'), '2026-10-25');
   assert.equal(L.parseDate('Nov 5, 2026'), '2026-11-05');
   assert.equal(L.parseDate('hello'), null);
+});
+
+test('dedicated water change / GFO columns', () => {
+  const t = L.makeTank('Reef', 'reef', []);
+  const rows = L.parseTable('Date\tWater change (gal)\tGFO (g)\n2026-11-01\t10\t\n2026-11-02\t\t60');
+  const m = L.guessMapping(rows, t);
+  assert.deepEqual(m.map.map((x) => x.kind), ['date', 'wc_gal', 'gfo']);
+  const r = L.convertRows(rows, m, t);
+  assert.deepEqual(r.entries.map((e) => [e.waterChange, e.gfo]), [[{ gallons: 10 }, undefined], [undefined, { grams: 60 }]]);
 });

@@ -6,13 +6,14 @@ It records:
 
 - **Any number of tanks**, each with its own parameters, target ranges and dosing products. There are presets for reef, freshwater and African cichlid tanks, or you can start blank. All tanks share the RODI filter tracking.
 - **Water tests and dosing** for each tank.
-- **Maintenance**: water changes (gallons or %), Rowaphos changes, and free-text notes.
-- **A trend dashboard** with one chart per parameter. Each chart shades the target range, highlights out-of-range readings, and marks water changes, Rowaphos changes and notes on the timeline. There are dosing charts too, and a time-range picker from 30 days to all.
+- **Maintenance as dedicated fields**: water changes (gallons or % of tank) and GFO replacements (grams, e.g. Rowaphos), each with its own column, dashboard tile and chart. Free-text notes are kept separately.
+- **A trend dashboard** with one chart per parameter. Each chart shades the target range, highlights out-of-range readings, and marks water changes, GFO changes and notes on the timeline. A water change volume chart is included. There are dosing charts too, and a time-range picker from 30 days to all.
 - **RODI filter tracking.** Each stage can alert on age, on gallons used, or on a TDS reading:
   - **Time:** days since install against a rated life.
   - **Usage:** gallons since install against the rated capacity. Pre-filters count feed water, which is product water × (1 + waste ratio), because the waste water passes through them too. The membrane and DI count product water only.
   - **TDS:** the DI stage is flagged when TDS out goes above your limit, which is a better guide to DI life than a calendar.
-  - Usage comes either from water changes plus a daily top-off estimate, or from the production you log in the app.
+  - Usage comes from the **RODI log**. Every water change in a tank set to *Uses RODI water* adds a row automatically, including water changes from imports. The row follows its tank entry: editing the entry updates it, and deleting the entry removes it. You add top-off refills and other use yourself. An optional daily top-off estimate (gal/day) is added on top, so set it to 0 if you log refills.
+  - Each filter stage shows how its total breaks down (water changes, refills, top-off estimate, other).
 - **Alerts** appear at the top of the dashboard and as a badge on the RODI tab. A daily push notification is optional (ntfy or a webhook such as Home Assistant).
 - **Paste import** from Google Sheets or a CSV file (see below), plus JSON backup and restore, and a CSV download for each tank.
 
@@ -69,7 +70,8 @@ Open the **Import** tab.
 The importer understands a few patterns:
 
 - Rows without a date take the date of the row above.
-- Text in any cell, including a value column, becomes an event: "15 gallon water change", "40% water change", "75g Rowas", and anything else as a note.
+- Columns named like *Water change (gal)*, *Water change %* or *GFO (g)* map to the dedicated fields.
+- Text in any cell, including a value column, is recognised too: "15 gallon water change" and "40% water change" become a water change, "75g Rowas" or "replaced GFO" becomes a GFO change, and anything else becomes a note.
 - "Added 22g of lake salt" becomes a dose. The product is created if the tank doesn't have it yet.
 - A range like "10-15" is stored as the midpoint, with a note.
 - If Sheets turned a range into a date ("2026-10-15" in a Nitrate column), it is read as 10–15 and listed in the warnings.
@@ -77,6 +79,10 @@ The importer understands a few patterns:
 The same box works for quick data entry. Paste a header row and one row of new readings.
 
 Each tank's targets are presets. Change them under **Settings**, where you can also rename tanks, set volumes (needed to convert percentage water changes to gallons), choose which tanks count toward RODI usage, add or remove parameters and dosing products, and delete a tank.
+
+### Upgrading from an earlier version
+
+On start-up, older databases are migrated automatically. Water changes and Rowaphos/GFO stored as notes move into the dedicated fields, and the RODI log is filled in from past water changes. A JSON backup from an earlier version can also be restored as-is.
 
 ## Development
 

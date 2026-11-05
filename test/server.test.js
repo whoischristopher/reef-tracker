@@ -51,11 +51,41 @@ test('create, patch, delete a document and bump version', async () => {
   const { json: { id } } = await api('POST', '/api/doc/rodi', { date: '2026-11-05', gallons: 5 });
   await api('PATCH', `/api/doc/rodi/${id}`, { tdsOut: 0 });
   let s = (await api('GET', '/api/state')).json;
-  assert.deepEqual(s.rodi.find((r) => r.id === id), { id, date: '2026-11-05', gallons: 5, tdsOut: 0 });
+  assert.deepEqual(s.rodi.find((r) => r.id === id), { id, date: '2026-11-05', gallons: 5, tdsOut: 0, source: 'manual' });
   await api('DELETE', `/api/doc/rodi/${id}`);
   s = (await api('GET', '/api/state')).json;
   assert.ok(!s.rodi.some((r) => r.id === id));
   assert.ok(s.version > v0);
+});
+
+test('water changes create RODI log rows that follow the entry', async () => {
+  const L = require('../lib/logic.js');
+  const t = Object.assign(L.makeTank('Reef', 'reef', []), { volume: 50 });
+  const config = { tanks: [t], rodi: { ...L.DEFAULT_CONFIG.rodi, includeTanks: [t.id] } };
+  // old-style events are migrated to the waterChange field on the way in
+  await api('POST', '/api/bulk', { config, replaceTank: t.id, entries: [
+    { tank: t.id, date: '2026-10-01', values: {}, doses: {}, events: [{ type: 'water_change', gallons: 10 }, { type: 'rowaphos', grams: 75 }], note: '' },
+    { tank: t.id, date: '2026-10-08', values: {}, doses: {}, waterChange: { percent: 20 }, events: [], note: '' },
+  ] });
+  let s = (await api('GET', '/api/state')).json;
+  const e1 = s.entries.find((e) => e.date === '2026-10-01');
+  assert.deepEqual([e1.waterChange, e1.gfo, e1.events], [{ gallons: 10 }, { grams: 75 }, []]);
+  let auto = s.rodi.filter((r) => r.source === 'auto').sort((a, b) => (a.date < b.date ? -1 : 1));
+  assert.deepEqual(auto.map((r) => r.gallons), [10, 10]);
+  // auto rows can't be deleted directly
+  assert.equal((await api('DELETE', `/api/doc/rodi/${auto[0].id}`)).status, 409);
+  // editing the entry updates its row; deleting the entry removes it
+  await api('PATCH', `/api/doc/entries/${e1.id}`, { waterChange: { gallons: 12 } });
+  s = (await api('GET', '/api/state')).json;
+  assert.equal(s.rodi.find((r) => r.entryId === e1.id).gallons, 12);
+  await api('DELETE', `/api/doc/entries/${e1.id}`);
+  s = (await api('GET', '/api/state')).json;
+  assert.equal(s.rodi.filter((r) => r.source === 'auto').length, 1);
+  // tank no longer uses RODI -> its rows go away
+  await api('PUT', '/api/doc/config/main', { ...config, rodi: { ...config.rodi, includeTanks: [] } });
+  s = (await api('GET', '/api/state')).json;
+  assert.equal(s.rodi.filter((r) => r.source === 'auto').length, 0);
+  await api('POST', `/api/tanks/${t.id}/delete`);
 });
 
 test('rejects unknown collections and bad bodies', async () => {

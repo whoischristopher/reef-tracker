@@ -56,7 +56,30 @@ const getMeta = (k) => { const r = q.getMeta.get(k); return r ? r.value : null; 
 const bump = () => q.setMeta.run('version', String(Number(getMeta('version') || 0) + 1));
 const now = () => new Date().toISOString();
 
-function putDoc(coll, id, data) { q.put.run(coll, id, JSON.stringify(data), now()); }
+function putDoc(coll, id, data) {
+  if (coll === 'entries') { data = Logic.normalizeEntry(data); delete data.id; }
+  q.put.run(coll, id, JSON.stringify(data), now());
+}
+/**
+ * Keep the RODI log in step with the tank logs: every water change in a tank that
+ * uses RODI water has a matching auto row (id "wc-<entry id>"). Runs after any
+ * change to entries or settings.
+ */
+function syncRodi() {
+  const cfgRow = q.get.get('config', 'main');
+  const entries = q.byColl.all('entries').map((r) => Object.assign({ id: r.id }, JSON.parse(r.data)));
+  const want = Logic.autoRodiLogs({ config: cfgRow ? JSON.parse(cfgRow.data) : null, entries });
+  let changed = 0;
+  for (const r of q.byColl.all('rodi')) {
+    const d = JSON.parse(r.data);
+    if (d.source !== 'auto') continue;
+    if (!want[r.id]) { q.del.run('rodi', r.id); changed++; }
+    else if (JSON.stringify(want[r.id]) !== r.data) { q.put.run('rodi', r.id, JSON.stringify(want[r.id]), now()); changed++; }
+    delete want[r.id];
+  }
+  for (const [id, d] of Object.entries(want)) { q.put.run('rodi', id, JSON.stringify(d), now()); changed++; }
+  return changed;
+}
 function readState() {
   const s = { config: null, entries: [], filters: [], rodi: [], version: Number(getMeta('version') || 0) };
   for (const r of q.all.all()) {
@@ -74,9 +97,11 @@ function replaceAll(state) {
     for (const coll of ['entries', 'filters', 'rodi']) {
       for (const d of state[coll] || []) {
         const { id, ...rest } = d;
+        if (coll === 'rodi' && rest.source === 'auto') continue; // regenerated below
         putDoc(coll, id && ID_RE.test(id) ? id : crypto.randomUUID(), rest);
       }
     }
+    syncRodi();
     bump();
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
@@ -93,12 +118,30 @@ if (q.count.get().n === 0) {
     console.log('Initialised an empty log');
   }
 }
+// Migrate older data (water changes / GFO stored as events, RODI usage not logged).
+{
+  let migrated = 0;
+  db.exec('BEGIN');
+  for (const r of q.byColl.all('entries')) {
+    const before = JSON.parse(r.data), after = Logic.normalizeEntry(before); delete after.id;
+    if (JSON.stringify(after) !== JSON.stringify(before)) { q.put.run('entries', r.id, JSON.stringify(after), now()); migrated++; }
+  }
+  for (const r of q.byColl.all('rodi')) { // manual rows written before rows had a kind
+    const d = JSON.parse(r.data);
+    if (!d.kind) { d.kind = d.gallons != null ? 'other' : 'tds'; d.source = 'manual'; q.put.run('rodi', r.id, JSON.stringify(d), now()); migrated++; }
+  }
+  const synced = syncRodi();
+  if (migrated || synced) bump();
+  db.exec('COMMIT');
+  if (migrated || synced) console.log(`Migrated ${migrated} rows; ${synced} RODI log rows synced from water changes`);
+}
 function bulkAdd(entries, config, replaceTank) {
   db.exec('BEGIN');
   try {
     if (replaceTank) db.prepare("DELETE FROM docs WHERE collection = 'entries' AND json_extract(data, '$.tank') = ?").run(replaceTank);
     if (config) putDoc('config', 'main', config);
     for (const e of entries) { const { id, ...rest } = e; putDoc('entries', crypto.randomUUID(), rest); }
+    syncRodi();
     bump();
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
@@ -114,6 +157,7 @@ function deleteTank(tankId) {
       if (c.rodi && Array.isArray(c.rodi.includeTanks)) c.rodi.includeTanks = c.rodi.includeTanks.filter((x) => x !== tankId);
       putDoc('config', 'main', c);
     }
+    syncRodi();
     bump();
     db.exec('COMMIT');
     return removed;
@@ -243,22 +287,28 @@ const server = http.createServer(async (req, res) => {
       const coll = m[1], id = m[2] ? decodeURIComponent(m[2]) : null;
       if (!COLLECTIONS.has(coll)) return send(res, 404, { error: 'Unknown collection' });
       if (id !== null && !ID_RE.test(id)) return send(res, 400, { error: 'Bad id' });
+      const after = () => { if (coll === 'entries' || coll === 'config') syncRodi(); bump(); };
+      if (coll === 'rodi' && id !== null) {
+        const cur = q.get.get('rodi', id);
+        if (cur && JSON.parse(cur.data).source === 'auto') return send(res, 409, { error: 'This row comes from a water change — edit or delete the tank log entry instead' });
+      }
       if (req.method === 'POST' && id === null) {
         const body = await readBody(req); delete body.id;
+        if (coll === 'rodi') { if (body.source === 'auto') return send(res, 400, { error: 'source auto is reserved' }); body.source = 'manual'; }
         const newId = crypto.randomUUID();
-        putDoc(coll, newId, body); bump();
+        putDoc(coll, newId, body); after();
         return send(res, 201, { id: newId });
       }
       if (id === null) return send(res, 405, { error: 'Method not allowed' });
-      if (req.method === 'PUT') { const body = await readBody(req); delete body.id; putDoc(coll, id, body); bump(); return send(res, 200, { id }); }
+      if (req.method === 'PUT') { const body = await readBody(req); delete body.id; if (coll === 'rodi') body.source = 'manual'; putDoc(coll, id, body); after(); return send(res, 200, { id }); }
       if (req.method === 'PATCH') {
         const cur = q.get.get(coll, id);
         if (!cur) return send(res, 404, { error: 'Not found' });
         const body = await readBody(req); delete body.id;
-        putDoc(coll, id, Object.assign(JSON.parse(cur.data), body)); bump();
+        putDoc(coll, id, Object.assign(JSON.parse(cur.data), body)); after();
         return send(res, 200, { id });
       }
-      if (req.method === 'DELETE') { q.del.run(coll, id); bump(); return send(res, 200, { id }); }
+      if (req.method === 'DELETE') { q.del.run(coll, id); after(); return send(res, 200, { id }); }
     }
     send(res, 404, { error: 'Not found' });
   } catch (e) {
