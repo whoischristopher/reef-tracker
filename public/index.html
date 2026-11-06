@@ -635,6 +635,14 @@ function renderWelcome(v){
 /* ------------------------------------------------------------------ settings */
 function presetOptions(sel){ return Object.entries(Logic.TANK_PRESETS).map(([k,p])=>`<option value="${k}" ${k===sel?'selected':''}>${esc(p.label)}</option>`).join(''); }
 async function saveConfig(c, msg){ const ok=await write(db=>db.doc('config/main').set(c), msg||'Settings saved'); return ok; }
+function syncCard(g){
+  if(!g) return '<p class="small muted">Loading…</p>';
+  if(!g.configured) return g.error?`<p class="small"><span class="out">Not running:</span> ${esc(g.error)}.</p>`:`<p class="small muted">Off. Set <code>GITHUB_SYNC_REPO</code> (owner/name of a private repo you created) and <code>GITHUB_SYNC_TOKEN</code> (fine-grained token, Contents read/write on that repo only) to push CSVs, a digest and a JSON backup there. One-way: nothing is read back.</p>`;
+  const when=g.lastSyncAt?new Date(g.lastSyncAt).toLocaleString('en-CA'):'never';
+  return `<p class="small">Pushing to <code>${esc(g.repo)}</code> @ <code>${esc(g.branch)}</code>${g.dir?` in <code>${esc(g.dir)}/</code>`:''}, ${g.delayMin} min after changes and daily at ${g.hour}:00. Last sync: ${esc(when)}${g.lastSha?` (<code>${esc(g.lastSha.slice(0,7))}</code>)`:''}.${g.pending?' <b>Changes pending.</b>':''}</p>
+    ${g.lastError?`<p class="small"><span class="out">Last attempt failed:</span> ${esc(g.lastError.message)}</p>`:''}
+    <div class="actions"><button class="btn sm" id="syncNow">Sync now</button><span class="small muted" id="syncResult"></span></div>`;
+}
 function renderSettings(v){
   const c=clean(cfg()), r=Object.assign({},DEFAULT_CONFIG.rodi,c.rodi||{});
   let h=`<div class="card"><h2>Add a tank</h2><form id="addTank" class="row" style="align-items:end">
@@ -671,9 +679,10 @@ function renderSettings(v){
   h+=`<div class="two" style="margin-top:16px"><div class="card"><h2>Notifications</h2>
     ${n?(n.configured?`<p class="small">Daily alert digest at ${n.hour}:00 (${esc(n.tz)}) via ${[n.ntfy?'ntfy':'',n.webhook?'webhook':''].filter(Boolean).join(' + ')}. Sent only on days with alerts.${n.lastNotified?` Last checked ${fmtDate(n.lastNotified)}.`:''}</p><div class="actions"><button class="btn sm" id="testNotify">Send test notification</button><span class="small muted" id="notifyResult"></span></div>`
       :`<p class="small muted">Off. Set <code>NTFY_URL</code> (and optionally <code>NTFY_TOKEN</code>) or <code>WEBHOOK_URL</code> on the container to get a daily push when a filter is due or a parameter is out of range.</p>`):'<p class="small muted">Loading…</p>'}
-    </div><div class="card"><h2>Backup & restore</h2>
+    </div><div class="card"><h2>GitHub sync</h2>${syncCard(S.info&&S.info.sync)}</div></div>
+    <div class="two" style="margin-top:16px"><div class="card"><h2>Backup & restore</h2>
     <p class="small muted">Everything lives in <code>/data/reef.db</code> on your server. Export a JSON copy any time; importing a JSON backup replaces all current data.</p>
-    <div class="actions"><a class="btn sm" href="/api/export" download>Export JSON</a><label class="btn sm" style="display:inline-block">Restore JSON…<input type="file" id="importFile" accept="application/json,.json" class="hide"></label><span class="small muted" id="importResult"></span></div></div></div>`;
+    <div class="actions"><a class="btn sm" href="/api/export" download>Export JSON</a><label class="btn sm" style="display:inline-block">Restore JSON…<input type="file" id="importFile" accept="application/json,.json" class="hide"></label><span class="small muted" id="importResult"></span></div></div><div></div></div>`;
   v.innerHTML=h;
 
   $('#addTank').onsubmit=async ev=>{ ev.preventDefault(); const fd=new FormData(ev.target);
@@ -699,6 +708,7 @@ function renderSettings(v){
   };
   v.querySelectorAll('[data-deltank]').forEach(b=>b.onclick=()=>{ const t=c.tanks.find(x=>x.id===b.dataset.deltank); const n=S.entries.filter(e=>e.tank===t.id).length;
     confirmInline(b,`Delete ${t.name}${n?` and its ${n} entries`:''}? This can’t be undone.`,async()=>{ const ok=await write(()=>req('POST',`/api/tanks/${encodeURIComponent(t.id)}/delete`),`Deleted ${t.name}`); if(ok) renderSettings(v); }); });
+  const sn=$('#syncNow'); if(sn) sn.onclick=async()=>{ sn.disabled=true; $('#syncResult').textContent='Syncing…'; try{ const r=await req('POST','/api/sync'); $('#syncResult').textContent=r.committed?`Committed ${r.sha.slice(0,7)}`:'Up to date (no changes)'; S.info.sync=Object.assign(S.info.sync,r.status); }catch(e){ $('#syncResult').textContent='Failed: '+e.message; } sn.disabled=false; };
   const tn=$('#testNotify'); if(tn) tn.onclick=async()=>{ tn.disabled=true; $('#notifyResult').textContent='Sending…'; try{ const r=await req('POST','/api/notify/test'); $('#notifyResult').textContent=r.sent?`Sent (${(r.results||[]).join(', ')})`:r.reason; }catch(e){ $('#notifyResult').textContent='Failed: '+e.message; } tn.disabled=false; };
   $('#importFile').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; const out=$('#importResult');
     try{ const data=JSON.parse(await f.text()); out.textContent='Restoring…'; const r=await req('POST','/api/import',data); await loadState(); out.textContent=''; toast(`Restored ${r.entries} entries`); }

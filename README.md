@@ -1,6 +1,6 @@
 # Reef Tracker
 
-A self-hosted aquarium log that replaces a spreadsheet. **Your data never leaves your server**: the repo and the image contain no readings, and everything you log lives in the SQLite file on your Docker host.
+A self-hosted aquarium log that replaces a spreadsheet. The repo and the image contain no readings: everything you log lives in the SQLite file on your Docker host. Your data leaves the server only if you turn on the optional [GitHub sync](#github-sync), which pushes a copy to a private repo you choose.
 
 It records:
 
@@ -15,6 +15,7 @@ It records:
   - Usage comes from the **RODI log**. Every water change in a tank set to *Uses RODI water* adds a row automatically, including water changes from imports. The row follows its tank entry: editing the entry updates it, and deleting the entry removes it. You add top-off refills and other use yourself. An optional daily top-off estimate (gal/day) is added on top, so set it to 0 if you log refills.
   - Each filter stage shows how its total breaks down (water changes, refills, top-off estimate, other).
 - **Alerts** appear at the top of the dashboard and as a badge on the RODI tab. A daily push notification is optional (ntfy or a webhook such as Home Assistant).
+- **Optional one-way GitHub sync** of CSVs, a trend digest and a JSON backup to a private repo, so the data can be analysed elsewhere (for example by Claude).
 - **Paste import** from Google Sheets or a CSV file (see below), plus JSON backup and restore, and a CSV download for each tank.
 
 The server has no npm dependencies. It uses Node 22's built-in HTTP server and `node:sqlite`, and keeps all data in a single SQLite file at `/data/reef.db`.
@@ -49,6 +50,12 @@ Add a proxy host such as `reef.<your-domain>` pointing to `http://<docker-host>:
 | `APP_URL` | — | Link that opens when you tap the notification |
 | `AUTH_USER` / `AUTH_PASS` | — | Turns on HTTP basic auth for everything except `/healthz` |
 | `PORT` | `8080` | Port inside the container |
+| `GITHUB_SYNC_REPO` | — | `owner/name` of the private repo to sync to. Turns on [GitHub sync](#github-sync) |
+| `GITHUB_SYNC_TOKEN` | — | Fine-grained personal access token for that repo (Contents: read and write) |
+| `GITHUB_SYNC_BRANCH` | `main` | Branch to commit to |
+| `GITHUB_SYNC_DIR` | — | Optional folder inside the repo for the synced files |
+| `GITHUB_SYNC_DELAY_MIN` | `10` | Minutes to wait after the last change before pushing, so a batch of entries becomes one commit |
+| `GITHUB_SYNC_HOUR` | `3` | Local hour for the daily refresh of the digest (filter ages, alerts) |
 | `SEED_FILE` | — | Optional path inside the container to an export JSON that is loaded once into an empty database |
 
 **Settings → Send test notification** checks your notification setup right away.
@@ -57,6 +64,38 @@ Add a proxy host such as `reef.<your-domain>` pointing to `http://<docker-host>:
 
 - Keep the `/data` volume on **local disk**. SQLite locking is unreliable over NFS, so don't put the volume on the TrueNAS NFS mount.
 - Back up with **Settings → Export JSON**. For an automated copy, use `curl -s http://<host>:8087/api/export > reef-$(date +%F).json` from a cron job on TrueNAS. **Import JSON** restores an export and replaces all current data.
+
+## GitHub sync
+
+An optional, **one-way** copy of the log to a GitHub repository (app → GitHub; nothing is ever read back). It is meant for analysing the data elsewhere, and it doubles as an off-site backup.
+
+**Set-up**
+
+1. Create a **private** repository with any name, **with a README** (the API cannot commit to an empty repo).
+2. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new):
+   - **Repository access:** *Only select repositories* → the data repo only.
+   - **Permissions:** *Contents: Read and write*. Nothing else (Metadata: read-only is added automatically).
+   - Set an expiry and a reminder to rotate it. When it expires, the sync fails and Settings says so; the app keeps working.
+3. Set `GITHUB_SYNC_REPO=owner/name` and `GITHUB_SYNC_TOKEN=…` in the Portainer stack's environment variables, then redeploy.
+4. Open **Settings → GitHub sync** and click **Sync now** to check it.
+
+Keep the token out of the code repo. Set it only as a stack environment variable. It is never shown in the UI or included in exports.
+
+**What is written**: one commit per sync. Other files in the repo (your README, notes) are left alone.
+
+| File | Contents |
+|---|---|
+| `digest.md` | Alerts; per tank, the latest value, target, status, 30-day range, 90-day mean and weekly trend for each parameter; recent husbandry; RODI stage status |
+| `parameters.csv` | One row per reading: date, tank, param, label, unit, value, targets, status |
+| `doses.csv` | One row per dose |
+| `maintenance.csv` | Water changes (in gallons), GFO changes, events and notes |
+| `rodi_log.csv` | RODI log, including the rows made automatically from water changes |
+| `filters.csv` | RODI stages with days and gallons in use, % used, status and projected due date |
+| `export.json` | The full export. Restore it with **Settings → Restore JSON** |
+
+**When it runs**: `GITHUB_SYNC_DELAY_MIN` minutes after the last change, and daily at `GITHUB_SYNC_HOUR`. The daily run refreshes the time-based figures, so expect about one commit a day. If a push fails (network or token), it retries on the next change or within the delay. **Sync now** pushes immediately. A sync that would change nothing makes no commit.
+
+The container needs outbound HTTPS to `api.github.com`. Nothing inbound is required.
 
 ## Importing data
 
@@ -91,9 +130,9 @@ npm start              # http://localhost:8080, data in ./data
 npm test               # logic and API tests (node:test)
 ```
 
-Layout: `server.js` (API, SQLite storage, notifier), `lib/logic.js` (filter and alert maths and the paste/CSV importer, shared by the server and the browser), and `public/index.html` (the whole UI: no build step, SVG charts).
+Layout: `server.js` (API, SQLite storage, notifier), `lib/sync.js` (GitHub sync: file builders and the REST API push), `lib/logic.js` (filter and alert maths and the paste/CSV importer, shared by the server and the browser), and `public/index.html` (the whole UI: no build step, SVG charts).
 
 ### API
 
-`GET /api/state` · `GET /api/version` · `GET /api/export` · `POST /api/import` (full restore) · `POST /api/bulk` (append entries, optional `config` and `replaceTank`) · `POST /api/tanks/:id/delete` · `POST /api/notify/test` · `GET /api/info` ·
+`GET /api/state` · `GET /api/version` · `GET /api/export` · `POST /api/import` (full restore) · `POST /api/bulk` (append entries, optional `config` and `replaceTank`) · `POST /api/tanks/:id/delete` · `POST /api/notify/test` · `GET /api/info` · `GET /api/sync` (status) · `POST /api/sync` (push now) ·
 `POST /api/doc/:collection` · `PUT|PATCH|DELETE /api/doc/:collection/:id`, where the collection is one of `config`, `entries`, `filters` or `rodi`.

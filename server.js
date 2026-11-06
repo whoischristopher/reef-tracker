@@ -9,6 +9,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 const Logic = require('./lib/logic.js');
+const Sync = require('./lib/sync.js');
 
 const PORT = Number(process.env.PORT || 8080);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -22,6 +23,14 @@ const NTFY_TOKEN = process.env.NTFY_TOKEN || '';
 const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
 const NOTIFY_HOUR = Number(process.env.NOTIFY_HOUR ?? 9);
 const APP_URL = process.env.APP_URL || '';
+// One-way sync to a GitHub repo (optional). The repo is whatever you name here.
+const GITHUB_SYNC_REPO = (process.env.GITHUB_SYNC_REPO || '').trim();     // owner/name
+const GITHUB_SYNC_TOKEN = process.env.GITHUB_SYNC_TOKEN || '';            // fine-grained PAT: Contents read/write on that repo only
+const GITHUB_SYNC_BRANCH = process.env.GITHUB_SYNC_BRANCH || 'main';
+const GITHUB_SYNC_DIR = process.env.GITHUB_SYNC_DIR || '';                // optional folder inside the repo
+const GITHUB_SYNC_DELAY_MIN = Number(process.env.GITHUB_SYNC_DELAY_MIN ?? 10);
+const GITHUB_SYNC_HOUR = Number(process.env.GITHUB_SYNC_HOUR ?? 3);
+const GITHUB_API = process.env.GITHUB_API || 'https://api.github.com';
 const COLLECTIONS = new Set(['config', 'entries', 'filters', 'rodi']);
 const ID_RE = /^[A-Za-z0-9_.:-]{1,100}$/;
 
@@ -53,7 +62,8 @@ const q = {
   setMeta: db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'),
 };
 const getMeta = (k) => { const r = q.getMeta.get(k); return r ? r.value : null; };
-const bump = () => q.setMeta.run('version', String(Number(getMeta('version') || 0) + 1));
+let syncer = null; // created below, once the database is ready
+const bump = () => { q.setMeta.run('version', String(Number(getMeta('version') || 0) + 1)); if (syncer) syncer.changed(); };
 const now = () => new Date().toISOString();
 
 function putDoc(coll, id, data) {
@@ -211,6 +221,16 @@ setInterval(() => {
   }
 }, 60 * 1000).unref();
 
+/* ------------------------------------------------------------- GitHub sync */
+syncer = Sync.createSyncer({
+  repo: GITHUB_SYNC_REPO, token: GITHUB_SYNC_TOKEN, branch: GITHUB_SYNC_BRANCH, dir: GITHUB_SYNC_DIR,
+  debounceMs: Math.max(0, GITHUB_SYNC_DELAY_MIN) * 60 * 1000, hour: GITHUB_SYNC_HOUR, tz: TZ, apiBase: GITHUB_API,
+  readState, getVersion: () => Number(getMeta('version') || 0), getMeta, setMeta: (k, v) => q.setMeta.run(k, v),
+});
+if (syncer.status().error) console.error('GitHub sync disabled:', syncer.status().error);
+setInterval(() => syncer.tick(), 60 * 1000).unref();
+setTimeout(() => syncer.tick(), 5000).unref();
+
 /* ------------------------------------------------------------- http */
 const STATIC = {
   '/': ['public/index.html', 'text/html; charset=utf-8'],
@@ -259,7 +279,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && p === '/api/state') return send(res, 200, readState());
     if (req.method === 'GET' && p === '/api/version') return send(res, 200, { version: Number(getMeta('version') || 0) });
-    if (req.method === 'GET' && p === '/api/info') return send(res, 200, { notify: { configured: notifyConfigured(), ntfy: Boolean(NTFY_URL), webhook: Boolean(WEBHOOK_URL), hour: NOTIFY_HOUR, tz: TZ, lastNotified: getMeta('lastNotified') } });
+    if (req.method === 'GET' && p === '/api/info') return send(res, 200, { notify: { configured: notifyConfigured(), ntfy: Boolean(NTFY_URL), webhook: Boolean(WEBHOOK_URL), hour: NOTIFY_HOUR, tz: TZ, lastNotified: getMeta('lastNotified') }, sync: { ...syncer.status(), hour: GITHUB_SYNC_HOUR, delayMin: GITHUB_SYNC_DELAY_MIN } });
+    if (req.method === 'GET' && p === '/api/sync') return send(res, 200, syncer.status());
+    if (req.method === 'POST' && p === '/api/sync') { const r = await syncer.run('manual'); return send(res, r.ok ? 200 : 502, { ...r, status: syncer.status() }); }
     if (req.method === 'GET' && p === '/api/export') {
       const s = readState(); delete s.version;
       res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="reef-tracker-${Logic.todayIn(TZ)}.json"` });
@@ -316,5 +338,5 @@ const server = http.createServer(async (req, res) => {
     send(res, e.status || 500, { error: e.status ? e.message : 'Server error' });
   }
 });
-server.listen(PORT, () => console.log(`Reef Tracker listening on :${PORT} (data: ${DB_FILE}, TZ ${TZ}, notifications ${notifyConfigured() ? 'on at ' + NOTIFY_HOUR + ':00' : 'off'})`));
+server.listen(PORT, () => console.log(`Reef Tracker listening on :${PORT} (data: ${DB_FILE}, TZ ${TZ}, notifications ${notifyConfigured() ? 'on at ' + NOTIFY_HOUR + ':00' : 'off'}, GitHub sync ${syncer.enabled ? 'to ' + GITHUB_SYNC_REPO + '@' + GITHUB_SYNC_BRANCH : 'off'})`));
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { server.close(); db.close(); process.exit(0); });

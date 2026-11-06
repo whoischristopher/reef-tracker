@@ -23,6 +23,13 @@ services:
       # Optional HTTP basic auth (recommended if exposed beyond your LAN).
       AUTH_USER: ${AUTH_USER:-}
       AUTH_PASS: ${AUTH_PASS:-}
+      # One-way sync to a private GitHub repo you create (optional). Leave blank to disable.
+      GITHUB_SYNC_REPO: ${GITHUB_SYNC_REPO:-}            # owner/name, e.g. yourname/reef-data
+      GITHUB_SYNC_TOKEN: ${GITHUB_SYNC_TOKEN:-}          # fine-grained PAT: Contents read/write on that repo only
+      GITHUB_SYNC_BRANCH: ${GITHUB_SYNC_BRANCH:-main}
+      GITHUB_SYNC_DIR: ${GITHUB_SYNC_DIR:-}              # optional folder inside the repo
+      GITHUB_SYNC_DELAY_MIN: ${GITHUB_SYNC_DELAY_MIN:-10} # minutes after the last change
+      GITHUB_SYNC_HOUR: ${GITHUB_SYNC_HOUR:-3}           # local hour for the daily refresh
 
 volumes:
   reef-data:
