@@ -30,7 +30,7 @@ test('starts empty with generic RODI stages', async () => {
 test('bulk import, replace, and tank delete', async () => {
   const L = require('../lib/logic.js');
   const t = L.makeTank('Reef', 'reef', []);
-  const config = { tanks: [t], rodi: { ...L.DEFAULT_CONFIG.rodi, includeTanks: [t.id] } };
+  const config = { tanks: [t], rodi: { ...L.DEFAULT_CONFIG.rodi } };
   const mk = (date, ca) => ({ tank: t.id, date, values: { ca }, doses: {}, events: [], note: '' });
   assert.equal((await api('POST', '/api/bulk', { entries: [mk('2026-01-01', 420), mk('2026-01-02', 430)], config })).status, 200);
   assert.equal((await api('GET', '/api/state')).json.entries.length, 2);
@@ -43,7 +43,6 @@ test('bulk import, replace, and tank delete', async () => {
   s = (await api('GET', '/api/state')).json;
   assert.equal(s.entries.length, 0);
   assert.deepEqual(s.config.tanks, []);
-  assert.deepEqual(s.config.rodi.includeTanks, []);
 });
 
 test('create, patch, delete a document and bump version', async () => {
@@ -58,34 +57,51 @@ test('create, patch, delete a document and bump version', async () => {
   assert.ok(s.version > v0);
 });
 
-test('water changes create RODI log rows that follow the entry', async () => {
+test('water changes no longer create RODI rows; source stays server-controlled', async () => {
   const L = require('../lib/logic.js');
   const t = Object.assign(L.makeTank('Reef', 'reef', []), { volume: 50 });
-  const config = { tanks: [t], rodi: { ...L.DEFAULT_CONFIG.rodi, includeTanks: [t.id] } };
+  const config = { tanks: [t], rodi: { ...L.DEFAULT_CONFIG.rodi } };
   // old-style events are migrated to the waterChange field on the way in
   await api('POST', '/api/bulk', { config, replaceTank: t.id, entries: [
     { tank: t.id, date: '2026-10-01', values: {}, doses: {}, events: [{ type: 'water_change', gallons: 10 }, { type: 'rowaphos', grams: 75 }], note: '' },
-    { tank: t.id, date: '2026-10-08', values: {}, doses: {}, waterChange: { percent: 20 }, events: [], note: '' },
   ] });
   let s = (await api('GET', '/api/state')).json;
   const e1 = s.entries.find((e) => e.date === '2026-10-01');
   assert.deepEqual([e1.waterChange, e1.gfo, e1.events], [{ gallons: 10 }, { grams: 75 }, []]);
-  let auto = s.rodi.filter((r) => r.source === 'auto').sort((a, b) => (a.date < b.date ? -1 : 1));
-  assert.deepEqual(auto.map((r) => r.gallons), [10, 10]);
-  // auto rows can't be deleted directly
-  assert.equal((await api('DELETE', `/api/doc/rodi/${auto[0].id}`)).status, 409);
-  // editing the entry updates its row; deleting the entry removes it
-  await api('PATCH', `/api/doc/entries/${e1.id}`, { waterChange: { gallons: 12 } });
+  assert.equal(s.rodi.length, 0);
+  const { json: { id } } = await api('POST', '/api/doc/rodi', { date: '2026-10-05', gallons: 5, source: 'history' });
+  await api('PATCH', `/api/doc/rodi/${id}`, { source: 'history' });
   s = (await api('GET', '/api/state')).json;
-  assert.equal(s.rodi.find((r) => r.entryId === e1.id).gallons, 12);
-  await api('DELETE', `/api/doc/entries/${e1.id}`);
-  s = (await api('GET', '/api/state')).json;
-  assert.equal(s.rodi.filter((r) => r.source === 'auto').length, 1);
-  // tank no longer uses RODI -> its rows go away
-  await api('PUT', '/api/doc/config/main', { ...config, rodi: { ...config.rodi, includeTanks: [] } });
-  s = (await api('GET', '/api/state')).json;
-  assert.equal(s.rodi.filter((r) => r.source === 'auto').length, 0);
+  assert.equal(s.rodi.find((r) => r.id === id).source, 'manual');
+  await api('DELETE', `/api/doc/rodi/${id}`);
   await api('POST', `/api/tanks/${t.id}/delete`);
+});
+
+test('importing an older backup converts water-change RODI rows', async () => {
+  const exp = (await api('GET', '/api/export')).json;
+  const old = { ...exp, rodi: [
+    { id: 'wc-abc', date: '2026-10-08', kind: 'water_change', source: 'auto', entryId: 'abc', tank: 'reef', gallons: 10 },
+    { id: 'r1', date: '2026-10-09', kind: 'tds', source: 'manual', tdsIn: 120, tdsOut: 0 },
+  ] };
+  await api('POST', '/api/import', old);
+  const s = (await api('GET', '/api/state')).json;
+  assert.deepEqual(s.rodi.find((r) => r.id === 'wc-abc'), { id: 'wc-abc', date: '2026-10-06', gallons: 10, source: 'history', note: 'Estimated: made for the 2026-10-08 water change' });
+  assert.deepEqual(s.rodi.find((r) => r.id === 'r1'), { id: 'r1', date: '2026-10-09', source: 'manual', tdsIn: 120, tdsOut: 0 });
+  await api('POST', '/api/import', exp);
+});
+
+test('top-off backfill adds weekly rows, refuses overlaps, and can be removed', async () => {
+  let r = await api('POST', '/api/rodi/backfill', { from: '2026-03-06', to: '2026-03-19', perDay: 0.7 });
+  assert.deepEqual(r.json, { ok: true, added: 2, gallons: 9.8 });
+  assert.equal((await api('POST', '/api/rodi/backfill', { from: '2026-03-15', to: '2026-04-01', perDay: 1 })).status, 409);
+  assert.equal((await api('POST', '/api/rodi/backfill', { from: '2026-04-01', to: '2026-03-01', perDay: 1 })).status, 400);
+  assert.equal((await api('POST', '/api/rodi/backfill', { from: '2026-04-01', to: '2026-04-02', perDay: 0 })).status, 400);
+  let s = (await api('GET', '/api/state')).json;
+  assert.equal(s.rodi.filter((x) => x.backfill).length, 2);
+  r = await api('DELETE', '/api/rodi/backfill');
+  assert.equal(r.json.removed, 2);
+  s = (await api('GET', '/api/state')).json;
+  assert.equal(s.rodi.filter((x) => x.backfill).length, 0);
 });
 
 test('rejects unknown collections and bad bodies', async () => {
