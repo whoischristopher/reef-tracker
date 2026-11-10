@@ -11,9 +11,8 @@ It records:
 - **RODI filter tracking.** Each stage can alert on age, on gallons used, or on a TDS reading:
   - **Time:** days since install against a rated life.
   - **Usage:** gallons since install against the rated capacity. Pre-filters count feed water, which is product water × (1 + waste ratio), because the waste water passes through them too. The membrane and DI count product water only.
-  - **TDS:** the DI stage is flagged when TDS out goes above your limit, which is a better guide to DI life than a calendar.
-  - Usage comes from the **RODI log**. Every water change in a tank set to *Uses RODI water* adds a row automatically, including water changes from imports. The row follows its tank entry: editing the entry updates it, and deleting the entry removes it. You add top-off refills and other use yourself. An optional daily top-off estimate (gal/day) is added on top, so set it to 0 if you log refills.
-  - Each filter stage shows how its total breaks down (water changes, refills, top-off estimate, other).
+  - **TDS:** the DI stage is flagged when TDS out goes above your limit (and warned at half of it), which is a better guide to DI life than a calendar. If no TDS reading has been logged for 30 days (configurable; 0 turns it off), the stage asks you to take one.
+  - Usage comes from the **RODI log**, which records production: log each batch of RODI you make, whatever it's for (water changes, top-off, other household uses). Water changes are tracked separately in the tank logs and don't add RODI rows. An optional daily estimate (gal/day) covers the days before your first logged batch.
 - **Alerts** appear at the top of the dashboard and as a badge on the RODI tab. A daily push notification is optional (ntfy or a webhook such as Home Assistant).
 - **Optional one-way GitHub sync** of CSVs, a trend digest and a JSON backup to a private repo, so the data can be analysed elsewhere (for example by Claude).
 - **Paste import** from Google Sheets or a CSV file (see below), plus JSON backup and restore, and a CSV download for each tank.
@@ -89,7 +88,7 @@ Keep the token out of the code repo. Set it only as a stack environment variable
 | `parameters.csv` | One row per reading: date, tank, param, label, unit, value, targets, status |
 | `doses.csv` | One row per dose |
 | `maintenance.csv` | Water changes (in gallons), GFO changes, events and notes |
-| `rodi_log.csv` | RODI log, including the rows made automatically from water changes |
+| `rodi_log.csv` | RODI log: batches made and TDS readings (`source` is `manual`, or `history` for rows estimated from past water changes) |
 | `filters.csv` | RODI stages with days and gallons in use, % used, status and projected due date |
 | `export.json` | The full export. Restore it with **Settings → Restore JSON** |
 
@@ -117,11 +116,11 @@ The importer understands a few patterns:
 
 The same box works for quick data entry. Paste a header row and one row of new readings.
 
-Each tank's targets are presets. Change them under **Settings**, where you can also rename tanks, set volumes (needed to convert percentage water changes to gallons), choose which tanks count toward RODI usage, add or remove parameters and dosing products, and delete a tank.
+Each tank's targets are presets. Change them under **Settings**, where you can also rename tanks, set volumes (needed to convert percentage water changes to gallons) add or remove parameters and dosing products, and delete a tank.
 
 ### Upgrading from an earlier version
 
-On start-up, older databases are migrated automatically. Water changes and Rowaphos/GFO stored as notes move into the dedicated fields, and the RODI log is filled in from past water changes. A JSON backup from an earlier version can also be restored as-is.
+On start-up, older databases are migrated automatically. Water changes and Rowaphos/GFO stored as notes move into the dedicated fields, and RODI rows that earlier versions generated from water changes become estimated production rows dated two days before each change. A JSON backup from an earlier version can also be restored as-is.
 
 ## Development
 

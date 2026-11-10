@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const L = require('../lib/logic.js');
 
 const reef = Object.assign(L.makeTank('Reef', 'reef', []), { volume: 75 });
-const config = { tanks: [reef], rodi: Object.assign({}, L.DEFAULT_CONFIG.rodi, { includeTanks: ['reef'] }) };
+const config = { tanks: [reef], rodi: Object.assign({}, L.DEFAULT_CONFIG.rodi) };
 const base = (over = {}) => ({ config, entries: [], rodiLogs: [], today: '2026-11-05', ...over });
 
 test('time-based filter goes warn then crit', () => {
@@ -13,31 +13,33 @@ test('time-based filter goes warn then crit', () => {
   assert.equal(L.filterUsage(base({ today: '2026-07-01' }), f).st, 'ok');
 });
 
-test('usage = RODI log + top-off estimate; feed water adds waste ratio', () => {
-  const rodiLogs = [
-    { date: '2026-11-01', kind: 'water_change', source: 'auto', gallons: 10 },
-    { date: '2026-11-02', kind: 'topoff', gallons: 5 },
-    { date: '2026-10-01', kind: 'topoff', gallons: 99 }, // before install
-  ];
+test('usage = logged RODI + daily estimate before the first logged batch; feed adds waste ratio', () => {
   const f = { name: 'Carbon', installed: '2026-10-26', lifeGallons: 100, basis: 'feed' };
-  const u = L.filterUsage(base({ rodiLogs }), f);
-  // product = 10 WC + 5 refill + 1 gal/day * 10 days = 25; feed = 25 * (1 + 3) = 100
-  assert.deepEqual(u.breakdown, { water_change: 10, topoff: 5, other: 0, topoffEst: 10 });
-  assert.equal(u.gal, 100);
-  assert.equal(u.st, 'crit');
+  // only history rows so far: the estimate runs to today (10 days)
+  let rodiLogs = [
+    { date: '2026-10-30', source: 'history', gallons: 10 },
+    { date: '2026-10-01', source: 'history', gallons: 99 }, // before install
+  ];
+  let u = L.filterUsage(base({ rodiLogs }), f);
+  assert.deepEqual(u.breakdown, { logged: 10, estimate: 10, estDays: 10 });
+  assert.equal(u.gal, 80); // (10 + 10) * (1 + 3)
+  // first hand-logged batch on 11-01 stops the estimate there (6 days)
+  rodiLogs = [...rodiLogs, { date: '2026-11-01', source: 'manual', gallons: 5 }, { date: '2026-11-03', source: 'manual', tdsOut: 0 }];
+  u = L.filterUsage(base({ rodiLogs }), f);
+  assert.deepEqual(u.breakdown, { logged: 15, estimate: 6, estDays: 6 });
+  assert.equal(u.gal, 84);
+  assert.equal(u.st, 'warn');
 });
 
-test('water changes in RODI tanks become auto RODI log rows (% converted by volume)', () => {
-  const entries = [
-    { id: 'a', tank: 'reef', date: '2026-11-01', waterChange: { percent: 20 } },
-    { id: 'b', tank: 'reef', date: '2026-11-02', waterChange: { gallons: 10 } },
-    { id: 'c', tank: 'other', date: '2026-11-02', waterChange: { gallons: 5 } },
-    { id: 'd', tank: 'reef', date: '2026-11-03', values: { ca: 420 } },
-  ];
-  const logs = L.autoRodiLogs(base({ entries }));
-  assert.deepEqual(Object.keys(logs), ['wc-a', 'wc-b']);
-  assert.equal(logs['wc-a'].gallons, 15);
-  assert.equal(logs['wc-b'].kind, 'water_change');
+test('older RODI rows migrate to production rows', () => {
+  const auto = { date: '2026-11-01', kind: 'water_change', source: 'auto', entryId: 'x', tank: 'reef', gallons: 10, note: 'Reef water change' };
+  assert.deepEqual(L.migrateRodiRow(auto), { date: '2026-10-30', gallons: 10, source: 'history', note: 'Estimated: made for the 2026-11-01 water change' });
+  assert.deepEqual(L.migrateRodiRow({ date: '2026-11-02', kind: 'topoff', source: 'manual', gallons: 5 }), { date: '2026-11-02', source: 'manual', gallons: 5 });
+  assert.deepEqual(L.migrateRodiRow({ date: '2026-11-02', tdsOut: 0 }), { date: '2026-11-02', tdsOut: 0, source: 'manual' });
+  const cur = { date: '2026-11-02', gallons: 5, source: 'manual' };
+  assert.equal(L.migrateRodiRow(cur), cur); // unchanged rows are returned as-is
+  const once = L.migrateRodiRow(auto);
+  assert.equal(L.migrateRodiRow(once), once); // idempotent
 });
 
 test('normalizeEntry moves water change / Rowaphos events into fields', () => {
@@ -49,10 +51,32 @@ test('normalizeEntry moves water change / Rowaphos events into fields', () => {
   assert.deepEqual(L.normalizeEntry(e), e); // idempotent
 });
 
-test('DI flags on TDS out above limit', () => {
-  const f = { name: 'DI', installed: '2026-08-01', tdsCheck: true, basis: 'product' };
+test('DI: crit above the TDS limit, warn at half of it', () => {
+  const f = { name: 'DI', installed: '2026-10-20', tdsCheck: true, basis: 'product' };
   assert.equal(L.filterUsage(base({ rodiLogs: [{ date: '2026-11-01', tdsOut: 0 }] }), f).st, 'ok');
+  assert.equal(L.filterUsage(base({ rodiLogs: [{ date: '2026-11-01', tdsOut: 0.5 }] }), f).st, 'warn');
   assert.equal(L.filterUsage(base({ rodiLogs: [{ date: '2026-11-01', tdsOut: 2 }] }), f).st, 'crit');
+  // the latest reading wins
+  assert.equal(L.filterUsage(base({ rodiLogs: [{ date: '2026-11-02', tdsOut: 0 }, { date: '2026-11-01', tdsOut: 2 }] }), f).st, 'ok');
+});
+
+test('TDS-checked stage warns when readings go stale', () => {
+  const f = { name: 'DI', installed: '2026-03-06', tdsCheck: true, basis: 'product' };
+  // no reading since install
+  let u = L.filterUsage(base(), f);
+  assert.equal(u.st, 'warn');
+  assert.deepEqual(u.tdsStale, { days: 244, last: null });
+  let a = L.filterAlerts(base(), [f])[0];
+  assert.equal(a.title, 'DI: TDS check due');
+  assert.match(a.detail, /no TDS reading since install \(244 days\)/);
+  // a reading 20 days ago is fine; 40 days ago is stale
+  assert.equal(L.filterUsage(base({ rodiLogs: [{ date: '2026-10-16', tdsOut: 0 }] }), f).st, 'ok');
+  u = L.filterUsage(base({ rodiLogs: [{ date: '2026-09-26', tdsOut: 0 }] }), f);
+  assert.deepEqual(u.tdsStale, { days: 40, last: '2026-09-26' });
+  // a new stage gets the grace period from its install date; 0 turns reminders off
+  assert.equal(L.filterUsage(base(), { ...f, installed: '2026-10-20' }).st, 'ok');
+  const off = { ...config, rodi: { ...config.rodi, tdsStaleDays: 0 } };
+  assert.equal(L.filterUsage(base({ config: off }), f).st, 'ok');
 });
 
 test('param alerts use the latest reading only', () => {

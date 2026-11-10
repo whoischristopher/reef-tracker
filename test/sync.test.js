@@ -53,14 +53,14 @@ function fakeGitHub({ token = 'tok', repo = 'me/reef-data', empty = false } = {}
 function sampleState() {
   const t = L.makeTank('Display Reef', 'reef', []); t.volume = 75;
   t.doses.push({ key: 'mg_dose', label: 'Magnesium', unit: 'ml' });
-  const config = { tanks: [t], rodi: { ...L.DEFAULT_CONFIG.rodi, includeTanks: [t.id] } };
+  const config = { tanks: [t], rodi: { ...L.DEFAULT_CONFIG.rodi } };
   const entries = [
     { id: 'a', tank: t.id, date: '2026-10-01', values: { po4: 0.3, alk: 8.5 }, doses: {}, events: [], note: '' },
     { id: 'b', tank: t.id, date: '2026-10-15', values: { po4: 0.2, alk: 8.7 }, doses: { mg_dose: 90 }, waterChange: { gallons: 15 }, events: [], note: 'Added blenny, "snails"' },
     { id: 'c', tank: t.id, date: '2026-11-01', values: { po4: 0.12, alk: 8.9 }, doses: {}, gfo: { grams: 75 }, events: [], note: '' },
   ];
   const filters = L.clone(L.DEFAULT_FILTERS); filters[0].installed = '2026-09-01';
-  const rodi = Object.entries(L.autoRodiLogs({ config, entries })).map(([id, d]) => ({ id, ...d }));
+  const rodi = [{ id: 'wc-b', ...L.migrateRodiRow({ date: '2026-10-15', source: 'auto', kind: 'water_change', gallons: 15 }) }];
   return { config, entries, filters, rodi };
 }
 
@@ -77,7 +77,7 @@ test('buildFiles produces the fixed file set, deterministically', () => {
   assert.match(f['maintenance.csv'], /2026-10-15,Display Reef,water_change,15,,,/);
   assert.match(f['maintenance.csv'], /2026-11-01,Display Reef,gfo,,,75,/);
   assert.match(f['maintenance.csv'], /note,,,,"Added blenny, ""snails"""/);
-  assert.match(f['rodi_log.csv'], /2026-10-15,water_change,auto,Display Reef,15,/);
+  assert.match(f['rodi_log.csv'], /^date,source,gallons,tds_in,tds_out,note\n2026-10-13,history,15,,,Estimated: made for the 2026-10-15 water change\n$/);
   assert.match(f['filters.csv'], /sediment,Sediment pre-filter,feed,180,,2026-09-01,66,/);
   assert.deepEqual(JSON.parse(f['export.json']).entries.length, 3);
   const d = f['digest.md'];
