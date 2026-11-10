@@ -12,7 +12,7 @@ It records:
   - **Time:** days since install against a rated life.
   - **Usage:** gallons since install against the rated capacity. Pre-filters count feed water, which is product water × (1 + waste ratio), because the waste water passes through them too. The membrane and DI count product water only.
   - **TDS:** the DI stage is flagged when TDS out goes above your limit (and warned at half of it), which is a better guide to DI life than a calendar. If no TDS reading has been logged for 30 days (configurable; 0 turns it off), the stage asks you to take one.
-  - Usage comes from the **RODI log**, which records production: log each batch of RODI you make, whatever it's for (water changes, top-off, other household uses). Water changes are tracked separately in the tank logs and don't add RODI rows. An optional daily estimate (gal/day) covers the days before your first logged batch.
+  - Usage comes from the **RODI log**, which records production: log each batch of RODI you make, whatever it's for (water changes, top-off, other household uses). Water changes are tracked separately in the tank logs and don't add RODI rows. For the time before you started logging, **Backfill estimated top-off** on the RODI tab adds weekly *estimated* rows at a gal/day rate you choose (one-off; remove and redo it if the rate was wrong).
 - **Alerts** appear at the top of the dashboard and as a badge on the RODI tab. A daily push notification is optional (ntfy or a webhook such as Home Assistant).
 - **Optional one-way GitHub sync** of CSVs, a trend digest and a JSON backup to a private repo, so the data can be analysed elsewhere (for example by Claude).
 - **Paste import** from Google Sheets or a CSV file (see below), plus JSON backup and restore, and a CSV download for each tank.
@@ -88,7 +88,7 @@ Keep the token out of the code repo. Set it only as a stack environment variable
 | `parameters.csv` | One row per reading: date, tank, param, label, unit, value, targets, status |
 | `doses.csv` | One row per dose |
 | `maintenance.csv` | Water changes (in gallons), GFO changes, events and notes |
-| `rodi_log.csv` | RODI log: batches made and TDS readings (`source` is `manual`, or `history` for rows estimated from past water changes) |
+| `rodi_log.csv` | RODI log: batches made and TDS readings (`source` is `manual`, or `history` for estimated rows: past water changes and top-off backfill) |
 | `filters.csv` | RODI stages with days and gallons in use, % used, status and projected due date |
 | `export.json` | The full export. Restore it with **Settings → Restore JSON** |
 
@@ -133,5 +133,5 @@ Layout: `server.js` (API, SQLite storage, notifier), `lib/sync.js` (GitHub sync:
 
 ### API
 
-`GET /api/state` · `GET /api/version` · `GET /api/export` · `POST /api/import` (full restore) · `POST /api/bulk` (append entries, optional `config` and `replaceTank`) · `POST /api/tanks/:id/delete` · `POST /api/notify/test` · `GET /api/info` · `GET /api/sync` (status) · `POST /api/sync` (push now) ·
+`GET /api/state` · `GET /api/version` · `GET /api/export` · `POST /api/import` (full restore) · `POST /api/bulk` (append entries, optional `config` and `replaceTank`) · `POST /api/tanks/:id/delete` · `POST|DELETE /api/rodi/backfill` (`{from, to, perDay}`; DELETE removes all backfill rows) · `POST /api/notify/test` · `GET /api/info` · `GET /api/sync` (status) · `POST /api/sync` (push now) ·
 `POST /api/doc/:collection` · `PUT|PATCH|DELETE /api/doc/:collection/:id`, where the collection is one of `config`, `entries`, `filters` or `rodi`.

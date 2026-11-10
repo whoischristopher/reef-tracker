@@ -269,6 +269,23 @@ const server = http.createServer(async (req, res) => {
       replaceAll({ config: body.config || null, entries: body.entries, filters: body.filters, rodi: body.rodi || [] });
       return send(res, 200, { ok: true, entries: body.entries.length });
     }
+    if (p === '/api/rodi/backfill' && req.method === 'POST') {
+      const b = await readBody(req), D = /^\d{4}-\d{2}-\d{2}$/, perDay = Number(b.perDay);
+      if (!D.test(b.from || '') || !D.test(b.to || '') || b.from > b.to) return send(res, 400, { error: 'from and to must be dates (YYYY-MM-DD), from ≤ to' });
+      if (!(perDay > 0 && perDay < 100)) return send(res, 400, { error: 'perDay must be a positive number of gallons' });
+      if (Logic.daysBetween(b.from, b.to) > 1100) return send(res, 400, { error: 'Backfill at most 3 years at a time' });
+      const clash = q.byColl.all('rodi').map((r) => JSON.parse(r.data)).find((d) => d.backfill && d.date <= b.to && (d.coversTo || d.date) >= b.from);
+      if (clash) return send(res, 409, { error: `Overlaps an existing top-off backfill (${clash.date}) — remove it first` });
+      const rows = Logic.backfillRows(b.from, b.to, perDay);
+      db.exec('BEGIN');
+      try { for (const r of rows) putDoc('rodi', crypto.randomUUID(), r); bump(); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
+      return send(res, 200, { ok: true, added: rows.length, gallons: Math.round(rows.reduce((a, r) => a + r.gallons, 0) * 100) / 100 });
+    }
+    if (p === '/api/rodi/backfill' && req.method === 'DELETE') {
+      const n = db.prepare("DELETE FROM docs WHERE collection = 'rodi' AND json_extract(data, '$.backfill') = 1").run().changes;
+      if (n) bump();
+      return send(res, 200, { ok: true, removed: n });
+    }
     if (req.method === 'POST' && p === '/api/bulk') {
       const body = await readBody(req);
       if (!Array.isArray(body.entries)) return send(res, 400, { error: 'entries array required' });

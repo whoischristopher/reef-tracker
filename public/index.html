@@ -531,7 +531,7 @@ function renderRodi(v){
   const alerts=filterAlerts(false);
   let h='';
   if(alerts.length) h+=`<div class="alerts">${alerts.map(a=>`<div class="alert ${a.lvl}"><span>${a.lvl==='crit'?'⛔':a.lvl==='warn'?'⚠️':'ℹ️'}</span><div>${a.html}</div></div>`).join('')}</div>`;
-  h+=`<div class="toolbar" style="margin-top:0"><h2 style="margin:0">Filter stages</h2><span class="muted small">Usage = RODI made (from the log)${Number(r.topoffPerDay)?` + ${fmtNum(r.topoffPerDay,1)} gal/day estimate until you start logging production`:''}</span><div class="spacer"></div><button class="btn sm" id="addFilter" ${S.canWrite?'':'disabled'}>Add stage</button></div>`;
+  h+=`<div class="toolbar" style="margin-top:0"><h2 style="margin:0">Filter stages</h2><span class="muted small">Usage = RODI made, from the log</span><div class="spacer"></div><button class="btn sm" id="addFilter" ${S.canWrite?'':'disabled'}>Add stage</button></div>`;
   h+='<div class="grid filters">';
   if(!S.filters.length) h+='<div class="card muted">No filter stages yet. Add your sediment, carbon, membrane and DI stages.</div>';
   S.filters.forEach(f=>{
@@ -542,7 +542,7 @@ function renderRodi(v){
       if(f.lifeDays){ const p=Math.min(1,u.pDays); h+=`<div class="kv"><span>Age</span><b>${u.days} / ${f.lifeDays} days</b></div><div class="bar ${u.pDays>=1?'crit':u.pDays>=r.warnPct/100?'warn':''}"><div style="width:${p*100}%"></div></div>`; }
       if(f.lifeGallons){ const p=Math.min(1,u.pGal); h+=`<div class="kv"><span>${f.basis==='feed'?'Feed water':'Product water'}</span><b>${fmtNum(u.gal,0)} / ${fmtNum(f.lifeGallons,0)} gal</b></div><div class="bar ${u.pGal>=1?'crit':u.pGal>=r.warnPct/100?'warn':''}"><div style="width:${p*100}%"></div></div>`; }
       else h+=`<div class="kv"><span>${f.basis==='feed'?'Feed water':'Product water'}</span><b>${fmtNum(u.gal,0)} gal</b></div><div class="small muted">Add a rated gallon capacity to alert on usage.</div>`;
-      const b=u.breakdown, parts=[[b.logged,'logged'],[b.estimate,`estimated (${b.estDays} d)`]].filter(x=>x[0]>0);
+      const b=u.breakdown, parts=[[b.logged,'logged'],[b.estimated,'estimated']].filter(x=>x[0]>0);
       if(parts.length) h+=`<div class="small muted" style="margin-top:2px">${fmtNum(u.product,0)} gal RODI since install: ${parts.map(([g,l])=>`${fmtNum(g,0)} ${l}`).join(' + ')}${f.basis==='feed'&&Number(r.wasteRatio)?` · ×${fmtNum(1+Number(r.wasteRatio),1)} incl. waste water`:''}</div>`;
       if(f.tdsCheck){ const last=u.lastTds; h+=`<div class="kv" style="margin-top:4px"><span>Last TDS out (limit ${fmtNum(r.tdsLimit,1)})</span><b>${last?`<span class="${u.tdsOver?'out':''}">${last.tdsOut} ppm</span> · ${fmtDate(last.date)}`:'none since install'}</b></div>${u.tdsStale?`<div class="small muted">Take a TDS reading — none in ${u.tdsStale.days} days.</div>`:''}`; }
       h+=`<div class="kv" style="margin-top:6px"><span>Installed</span><b>${fmtDate(f.installed)}</b></div>`;
@@ -567,14 +567,29 @@ function renderRodi(v){
     <label class="f">TDS out <span class="u">ppm, after DI</span><input type="number" step="any" name="tdsOut"></label></div>
     <label class="f" style="margin-top:10px">Note<input type="text" name="note"></label>
     <div class="actions"><button class="btn primary" type="submit" ${S.canWrite?'':'disabled'}>Save</button></div></form>
-    <p class="small muted">Log each batch of RODI you make, whatever it’s for (water changes, top-off, other uses). Rows marked <i>estimated</i> were carried over from past water changes, dated ${Logic.RODI_LEAD_DAYS} days before each one. TDS out above ${fmtNum(r.tdsLimit,1)} ppm flags the DI stage; it warns at half that, or after ${fmtNum(r.tdsStaleDays,0)} days without a reading.</p></div>
+    <p class="small muted">Log each batch of RODI you make, whatever it’s for (water changes, top-off, other uses). Rows marked <i>estimated</i> cover the time before you logged production: past water changes (dated ${Logic.RODI_LEAD_DAYS} days before each one) and any top-off backfill below. TDS out above ${fmtNum(r.tdsLimit,1)} ppm flags the DI stage; it warns at half that, or after ${fmtNum(r.tdsStaleDays,0)} days without a reading.</p></div>
     <div class="card"><div class="chart-head"><h2 style="margin:0">RODI log</h2><span class="meta">${S.rodiLogs.length} rows · ${fmtNum(yr,0)} gal logged in the last year</span></div>
     ${S.rodiLogs.length?`<div class="tablewrap" style="max-height:420px"><table><thead><tr><th>Date</th><th class="n">Gallons</th><th class="n">TDS in/out</th><th>Note</th><th></th></tr></thead><tbody>
       ${shown.map(l=>{ const est=l.source==='history'; return `<tr><td style="white-space:nowrap">${fmtDate(l.date)}${est?' <span class="chip na">estimated</span>':''}</td><td class="n">${l.gallons!=null&&l.gallons!==''?fmtNum(l.gallons,1):'<span class="muted">·</span>'}</td>
         <td class="n">${l.tdsIn!=null||l.tdsOut!=null?`${l.tdsIn??'–'} / ${l.tdsOut!=null&&l.tdsOut!==''?`<span class="${Number(l.tdsOut)>Number(r.tdsLimit)?'out':''}">${l.tdsOut}</span>`:'–'}`:''}</td><td class="small">${esc(l.note||'')}</td>
         <td><button class="btn sm" data-rdel="${l.id}">Delete</button></td></tr>`; }).join('')}
       </tbody></table></div>${logs.length>shown.length?`<div class="actions"><button class="btn sm" id="rodiAll">Show all ${logs.length} rows</button></div>`:''}`:'<p class="muted">Nothing logged yet.</p>'}
-    ${Number(r.topoffPerDay)?`<p class="small muted" style="margin:8px 0 0">Not shown as rows: ${fmtNum(r.topoffPerDay,1)} gal/day estimated use, counted only for days before your first logged batch.</p>`:''}</div></div>`;
+    </div></div>`;
+  // Top-off backfill for the period before production was logged
+  const bf=S.rodiLogs.filter(l=>l.backfill);
+  const firstManual=S.rodiLogs.filter(l=>l.source!=='history'&&Number(l.gallons)>0).map(l=>l.date).sort()[0];
+  const installs=S.filters.map(f=>f.installed).filter(Boolean).sort();
+  const bfTo=firstManual?msToStr(toMs(firstManual)-DAY):today;
+  h+=`<div class="card" style="margin-top:16px"><h2>Backfill estimated top-off</h2>`;
+  if(bf.length){ const g=bf.reduce((a,l)=>a+Number(l.gallons||0),0), ds=bf.map(l=>l.date).sort();
+    h+=`<p class="small">${bf.length} estimated top-off rows, ${fmtNum(g,0)} gal in total, ${fmtDate(ds[0])} – ${fmtDate(bf.map(l=>l.coversTo||l.date).sort().pop())}.</p>
+    <div class="actions"><button class="btn sm danger" id="bfRemove" ${S.canWrite?'':'disabled'}>Remove backfill</button></div>`; }
+  else h+=`<form id="bfForm"><div class="row">
+    <label class="f">From<input type="date" name="from" value="${installs[0]||''}" required></label>
+    <label class="f">To<input type="date" name="to" value="${bfTo}" required></label>
+    <label class="f">Top-off <span class="u">gal/day, all tanks</span><input type="number" step="any" min="0.01" name="perDay" required></label>
+    <div><button class="btn primary" type="submit" ${S.canWrite?'':'disabled'}>Add estimated rows</button></div></div></form>`;
+  h+=`<p class="small muted" style="margin:8px 0 0">One-off: fills the time before you started logging RODI with weekly <i>estimated</i> rows, so stages installed back then still count that water. Defaults run from your oldest stage install to the day before your first logged batch.</p></div>`;
   v.innerHTML=h;
 
   v.querySelectorAll('[data-replace]').forEach(b=>b.onclick=()=>{ S.replacing=b.dataset.replace; renderRodi(v); });
@@ -605,6 +620,10 @@ function renderRodi(v){
     const ok=await write(db=>db.collection('rodi').add(data),'Logged'); if(ok) renderRodi(v); };
   v.querySelectorAll('[data-rdel]').forEach(b=>b.onclick=()=>confirmInline(b,'Delete?',async()=>{ await write(db=>db.doc('rodi/'+b.dataset.rdel).delete(),'Deleted'); renderRodi(v); }));
   const ra=$('#rodiAll'); if(ra) ra.onclick=()=>{ S.rodiShowAll=true; renderRodi(v); };
+  const bff=$('#bfForm'); if(bff) bff.onsubmit=async ev=>{ ev.preventDefault(); const fd=new FormData(bff);
+    let res=null; const ok=await write(async()=>{ res=await req('POST','/api/rodi/backfill',{from:fd.get('from'),to:fd.get('to'),perDay:num(fd.get('perDay'))}); });
+    if(ok&&res) toast(`Added ${res.added} rows (${fmtNum(res.gallons,0)} gal)`); };
+  const bfr=$('#bfRemove'); if(bfr) bfr.onclick=()=>confirmInline(bfr,'Remove all backfill rows?',async()=>{ await write(()=>req('DELETE','/api/rodi/backfill'),'Backfill removed'); });
 }
 function filterForm(f){
   return `<div class="card"><form id="filterForm"><h3 style="margin-bottom:8px">${f.id?'Edit stage':'New stage'}</h3>
@@ -662,7 +681,6 @@ function renderSettings(v){
     <div class="actions" style="margin-top:10px"><button class="btn primary sm" type="submit">Save changes</button><div class="spacer"></div><button class="btn sm danger" type="button" data-deltank="${t.id}">Delete tank…</button></div></div>`;
   });
   h+=`<div class="card" style="margin-top:12px"><h2>RODI usage (shared by all tanks)</h2><div class="row">
-    <label class="f">Estimated use <span class="u">gal/day, counted only before your first logged batch</span><input type="number" step="any" min="0" name="topoffPerDay" value="${r.topoffPerDay}"></label>
     <label class="f">Waste ratio <span class="u">gal waste per gal product</span><input type="number" step="any" name="wasteRatio" value="${r.wasteRatio}"></label>
     <label class="f">DI TDS limit <span class="u">ppm</span><input type="number" step="any" name="tdsLimit" value="${r.tdsLimit}"></label>
     <label class="f">TDS reminder <span class="u">days without a reading — 0 for off</span><input type="number" min="0" name="tdsStaleDays" value="${r.tdsStaleDays}"></label>
@@ -685,7 +703,7 @@ function renderSettings(v){
     if(await saveConfig(c,`Added ${name}`)){ S.tank=t.id; saveUi(); renderSettings(v); } };
   $('#setForm').onsubmit=async ev=>{
     ev.preventDefault(); const fd=new FormData(ev.target);
-    c.rodi={topoffPerDay:num(fd.get('topoffPerDay'))??0,wasteRatio:num(fd.get('wasteRatio'))??0,tdsLimit:num(fd.get('tdsLimit'))??1,tdsStaleDays:num(fd.get('tdsStaleDays'))??0,warnPct:num(fd.get('warnPct'))??80};
+    c.rodi={wasteRatio:num(fd.get('wasteRatio'))??0,tdsLimit:num(fd.get('tdsLimit'))??1,tdsStaleDays:num(fd.get('tdsStaleDays'))??0,warnPct:num(fd.get('warnPct'))??80};
     c.tanks.forEach(t=>{
       t.name=String(fd.get(t.id+'_name')||t.name).trim()||t.name; t.volume=num(fd.get(t.id+'_volume')); t.trackGfo=fd.get('gfo_'+t.id)==='on';
       t.params.forEach(p=>{ p.label=String(fd.get(`${t.id}_p_${p.key}_label`)).trim()||p.label; p.unit=String(fd.get(`${t.id}_p_${p.key}_unit`)).trim(); p.low=num(fd.get(`${t.id}_p_${p.key}_low`)); p.high=num(fd.get(`${t.id}_p_${p.key}_high`)); p.dp=num(fd.get(`${t.id}_p_${p.key}_dp`))??1; });

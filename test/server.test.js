@@ -90,6 +90,20 @@ test('importing an older backup converts water-change RODI rows', async () => {
   await api('POST', '/api/import', exp);
 });
 
+test('top-off backfill adds weekly rows, refuses overlaps, and can be removed', async () => {
+  let r = await api('POST', '/api/rodi/backfill', { from: '2026-03-06', to: '2026-03-19', perDay: 0.7 });
+  assert.deepEqual(r.json, { ok: true, added: 2, gallons: 9.8 });
+  assert.equal((await api('POST', '/api/rodi/backfill', { from: '2026-03-15', to: '2026-04-01', perDay: 1 })).status, 409);
+  assert.equal((await api('POST', '/api/rodi/backfill', { from: '2026-04-01', to: '2026-03-01', perDay: 1 })).status, 400);
+  assert.equal((await api('POST', '/api/rodi/backfill', { from: '2026-04-01', to: '2026-04-02', perDay: 0 })).status, 400);
+  let s = (await api('GET', '/api/state')).json;
+  assert.equal(s.rodi.filter((x) => x.backfill).length, 2);
+  r = await api('DELETE', '/api/rodi/backfill');
+  assert.equal(r.json.removed, 2);
+  s = (await api('GET', '/api/state')).json;
+  assert.equal(s.rodi.filter((x) => x.backfill).length, 0);
+});
+
 test('rejects unknown collections and bad bodies', async () => {
   assert.equal((await api('PUT', '/api/doc/users/x', { a: 1 })).status, 404);
   const r = await fetch(`http://127.0.0.1:${PORT}/api/doc/entries/x`, { method: 'PUT', body: '[1,2]' });

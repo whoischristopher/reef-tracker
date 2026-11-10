@@ -13,22 +13,26 @@ test('time-based filter goes warn then crit', () => {
   assert.equal(L.filterUsage(base({ today: '2026-07-01' }), f).st, 'ok');
 });
 
-test('usage = logged RODI + daily estimate before the first logged batch; feed adds waste ratio', () => {
+test('usage = RODI made since install (logged + estimated); feed adds waste ratio', () => {
   const f = { name: 'Carbon', installed: '2026-10-26', lifeGallons: 100, basis: 'feed' };
-  // only history rows so far: the estimate runs to today (10 days)
-  let rodiLogs = [
+  const rodiLogs = [
     { date: '2026-10-30', source: 'history', gallons: 10 },
     { date: '2026-10-01', source: 'history', gallons: 99 }, // before install
+    { date: '2026-11-01', source: 'manual', gallons: 6 },
+    { date: '2026-11-03', source: 'manual', tdsOut: 0 },
+    { date: '2026-11-09', source: 'manual', gallons: 50 }, // after today
   ];
-  let u = L.filterUsage(base({ rodiLogs }), f);
-  assert.deepEqual(u.breakdown, { logged: 10, estimate: 10, estDays: 10 });
-  assert.equal(u.gal, 80); // (10 + 10) * (1 + 3)
-  // first hand-logged batch on 11-01 stops the estimate there (6 days)
-  rodiLogs = [...rodiLogs, { date: '2026-11-01', source: 'manual', gallons: 5 }, { date: '2026-11-03', source: 'manual', tdsOut: 0 }];
-  u = L.filterUsage(base({ rodiLogs }), f);
-  assert.deepEqual(u.breakdown, { logged: 15, estimate: 6, estDays: 6 });
-  assert.equal(u.gal, 84);
-  assert.equal(u.st, 'warn');
+  const u = L.filterUsage(base({ rodiLogs }), f);
+  assert.deepEqual(u.breakdown, { logged: 6, estimated: 10 });
+  assert.equal(u.gal, 64); // 16 * (1 + 3)
+  assert.equal(u.st, 'ok');
+});
+
+test('top-off backfill: weekly rows, last one shorter', () => {
+  const rows = L.backfillRows('2026-10-01', '2026-10-16', 0.7);
+  assert.deepEqual(rows.map((r) => [r.date, r.coversTo, r.gallons]), [['2026-10-01', '2026-10-07', 4.9], ['2026-10-08', '2026-10-14', 4.9], ['2026-10-15', '2026-10-16', 1.4]]);
+  assert.ok(rows.every((r) => r.source === 'history' && r.backfill));
+  assert.equal(L.migrateRodiRow(rows[0]), rows[0]);
 });
 
 test('older RODI rows migrate to production rows', () => {
