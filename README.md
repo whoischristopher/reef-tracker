@@ -4,7 +4,9 @@ A self-hosted aquarium log that replaces a spreadsheet. The repo and the image c
 
 It records:
 
-- **Any number of tanks**, each with its own parameters, target ranges and dosing products. There are presets for reef, freshwater and African cichlid tanks, or you can start blank. All tanks share the RODI filter tracking.
+- **Any number of tanks**, each with its own parameters, target ranges and dosing products. There are presets for reef (mixed/LPS or SPS-dominant), freshwater and African cichlid tanks, or you can start blank. All tanks share the RODI filter tracking.
+- **Targets, not just "acceptable" ranges.** Each preset is a starting point you can edit per tank, or re-apply to an existing tank from **Settings → Target preset** (only matching parameters change; you see the before/after first). Reef charts also show **natural seawater** as a faint hatched band for reference. It is not a target: reef tanks usually run alkalinity and nutrients above it on purpose.
+- **Swing alerts.** Give a parameter a **Max change/day** (reef presets: alkalinity 1 dKH, calcium 25 ppm) and you're warned when two readings less than 14 days apart move faster than that. For alkalinity, stability matters more than the exact number.
 - **Water tests and dosing** for each tank.
 - **Maintenance as dedicated fields**: water changes (gallons or % of tank) and GFO replacements (grams, e.g. Rowaphos), each with its own column, dashboard tile and chart. Free-text notes are kept separately.
 - **A trend dashboard** with one chart per parameter. Each chart shades the target range, highlights out-of-range readings, and marks water changes, GFO changes and notes on the timeline. A water change volume chart is included. There are dosing charts too, and a time-range picker from 30 days to all.
@@ -116,7 +118,7 @@ The importer understands a few patterns:
 
 The same box works for quick data entry. Paste a header row and one row of new readings.
 
-Each tank's targets are presets. Change them under **Settings**, where you can also rename tanks, set volumes (needed to convert percentage water changes to gallons) add or remove parameters and dosing products, and delete a tank.
+Each tank's targets start from a preset. Change them under **Settings** (or apply another preset there), where you can also rename tanks, set volumes (needed to convert percentage water changes to gallons) add or remove parameters and dosing products, and delete a tank.
 
 ### Upgrading from an earlier version
 

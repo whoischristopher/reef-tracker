@@ -151,3 +151,34 @@ test('dedicated water change / GFO columns', () => {
   const r = L.convertRows(rows, m, t);
   assert.deepEqual(r.entries.map((e) => [e.waterChange, e.gfo]), [[{ gallons: 10 }, undefined], [undefined, { grams: 60 }]]);
 });
+
+test('seawater reference: reef tanks only, matching unit', () => {
+  const t = L.makeTank('Reef', 'reef', []), alk = t.params.find((p) => p.key === 'alk');
+  assert.deepEqual(L.seawaterRef(t, alk), { low: 6.4, high: 7.5 });
+  assert.equal(L.seawaterRef(t, { ...alk, unit: 'meq/L' }), null);
+  assert.equal(L.seawaterRef(L.makeTank('FW', 'freshwater', []), { key: 'no3', unit: 'ppm' }), null);
+  assert.ok(L.seawaterRef(L.makeTank('Frags', 'reef_sps', []), alk));
+  assert.equal(L.tracksGfo(L.makeTank('Frags', 'reef_sps', [])), true);
+});
+
+test('applyPreset updates matching targets only and reports changes', () => {
+  const t = L.makeTank('Reef', 'reef', []);
+  t.params.push({ key: 'k', label: 'Potassium', unit: 'ppm', low: 380, high: 420, dp: 0 });
+  t.params.find((p) => p.key === 'mg').unit = 'meq/L'; // different unit: left alone
+  const ch = L.applyPreset(t, 'reef_sps');
+  assert.equal(t.kind, 'reef_sps');
+  assert.deepEqual(t.params.find((p) => p.key === 'alk'), { key: 'alk', label: 'Alkalinity', unit: 'dKH', dp: 1, maxDaily: 1, low: 7, high: 9 });
+  assert.deepEqual(t.params.find((p) => p.key === 'k'), { key: 'k', label: 'Potassium', unit: 'ppm', low: 380, high: 420, dp: 0 });
+  assert.equal(t.params.find((p) => p.key === 'mg').low, 1250);
+  assert.ok(ch.some((c) => c.key === 'alk' && c.from[0] === 8 && c.to[0] === 7));
+  assert.ok(!ch.some((c) => c.key === 'mg' || c.key === 'k'));
+});
+
+test('swing alert: fast alk change between close readings', () => {
+  const mk = (date, alk) => ({ tank: 'reef', date, values: { alk } });
+  const swings = (entries) => L.paramAlerts(base({ entries }), 'reef').filter((a) => a.kind === 'swing');
+  assert.equal(swings([mk('2026-11-01', 8.5), mk('2026-11-02', 9.8)]).length, 1); // +1.3 in a day
+  assert.match(swings([mk('2026-11-01', 9.8), mk('2026-11-02', 8.5)])[0].title, /Alkalinity swung -1\.3 dKH/);
+  assert.equal(swings([mk('2026-11-01', 8.5), mk('2026-11-03', 9.8)]).length, 0); // 0.65/day
+  assert.equal(swings([mk('2026-10-01', 8.0), mk('2026-10-20', 10)]).length, 0); // too far apart to compare
+});

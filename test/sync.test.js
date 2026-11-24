@@ -52,6 +52,7 @@ function fakeGitHub({ token = 'tok', repo = 'me/reef-data', empty = false } = {}
 
 function sampleState() {
   const t = L.makeTank('Display Reef', 'reef', []); t.volume = 75;
+  Object.assign(t.params.find((p) => p.key === 'po4'), { low: 0.03, high: 0.1 }); // pinned, independent of preset values
   t.doses.push({ key: 'mg_dose', label: 'Magnesium', unit: 'ml' });
   const config = { tanks: [t], rodi: { ...L.DEFAULT_CONFIG.rodi } };
   const entries = [
@@ -84,6 +85,8 @@ test('buildFiles produces the fixed file set, deterministically', () => {
   assert.match(d, /## Tank: Display Reef/);
   assert.match(d, /\| Phosphate \(ppm\) \| 0\.12 \| 2026-11-01 \|/);
   assert.match(d, /Display Reef Phosphate above target/);
+  assert.match(d, /\| 8\.0–10\.0 \(seawater 6\.4–7\.5\); max ±1\.0\/day \|/);
+  assert.match(d, /Type: Reef: mixed \/ LPS/);
   assert.match(d, /2026-10-15: water change 15\.0 gal; dosed Magnesium 90 ml; note: Added blenny/);
 });
 
