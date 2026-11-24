@@ -11,7 +11,7 @@
   --bg:#f4f6f7; --surface:#fcfcfb; --surface-2:#eef1f2; --line:#dde2e4; --grid:#e8ecee;
   --text:#0b0b0b; --text-2:#52514e; --muted:#7c7b76;
   --accent:#0f6f8c; --accent-ink:#fff; --series:#2a78d6; --series-2:#eb6834; --series-3:#1baf7a;
-  --band:rgba(27,175,122,.10); --band-line:rgba(27,175,122,.45);
+  --band:rgba(27,175,122,.10); --band-line:rgba(27,175,122,.45); --ref:#7c7b76;
   --good:#0f7a3d; --good-bg:#e3f4ea; --warn:#9a6200; --warn-bg:#fdf1d8; --crit:#b42318; --crit-bg:#fde7e5;
   --shadow:0 1px 2px rgba(0,0,0,.05),0 1px 1px rgba(0,0,0,.03);
 }
@@ -21,7 +21,7 @@
     --bg:#121313; --surface:#1a1a19; --surface-2:#232423; --line:#323331; --grid:#2a2b29;
     --text:#f0efec; --text-2:#c3c2b7; --muted:#8f8e86;
     --accent:#3aa6c4; --accent-ink:#0b0b0b; --series:#3987e5; --series-2:#d95926; --series-3:#199e70;
-    --band:rgba(25,158,112,.14); --band-line:rgba(25,158,112,.5);
+    --band:rgba(25,158,112,.14); --band-line:rgba(25,158,112,.5); --ref:#9a998f;
     --good:#5fd08f; --good-bg:#16301f; --warn:#f2b94b; --warn-bg:#33270f; --crit:#ff8a80; --crit-bg:#3a1916;
     --shadow:none;
   }
@@ -242,7 +242,7 @@ function paramAlerts(tankId){ return Logic.paramAlerts(ctx(), tankId).map(a=>({l
 /* ------------------------------------------------------------------ chart */
 const tip = $('#tip');
 function chartSvg(el, opts){
-  // opts: {points:[{t,v,d}], low, high, dp, unit, xMin, xMax, events:[{t,kind,label}], bars:bool}
+  // opts: {points:[{t,v,d}], low, high, ref:{low,high}|null, dp, unit, xMin, xMax, events:[{t,kind,label}], bars:bool}
   const W = el.clientWidth||400, H = el.clientHeight||190;
   const m = {l:44,r:10,t:8,b:opts.events&&opts.events.length?34:22};
   const iw=W-m.l-m.r, ih=H-m.t-m.b;
@@ -250,6 +250,7 @@ function chartSvg(el, opts){
   if(!pts.length){ el.innerHTML='<div class="empty">No readings in this range</div>'; return; }
   let lo=Math.min(...pts.map(p=>p.v)), hi=Math.max(...pts.map(p=>p.v));
   if(opts.low!=null) lo=Math.min(lo,opts.low); if(opts.high!=null) hi=Math.max(hi,opts.high);
+  if(opts.ref){ lo=Math.min(lo,opts.ref.low); hi=Math.max(hi,opts.ref.high); }
   if(opts.bars) lo=0;
   if(hi===lo){ hi+=1; lo-=1; }
   const pad=(hi-lo)*0.08; if(!opts.bars) lo-=pad; hi+=pad;
@@ -260,8 +261,15 @@ function chartSvg(el, opts){
   const yt=niceTicks(lo,hi,4), span=(x1-x0)/DAY;
   const xt=[]; { const n=Math.max(2,Math.min(6,Math.floor(iw/80))); for(let i=0;i<=n;i++) xt.push(x0+(x1-x0)*i/n); }
   let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.title||'chart')}">`;
-  yt.forEach(v=>{ s+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--grid)" stroke-width="1"/><text x="${m.l-6}" y="${Y(v)+4}" text-anchor="end" font-size="11" fill="var(--muted)">${fmtTick(v)}</text>`; });
+  yt.forEach(v=>{ s+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--grid)" stroke-width="1"/><text x="${m.l-6}" y="${Y(v)+4}" text-anchor="end" font-size="11" fill="var(--muted)">${fmtTick(v,yt.length>1?yt[1]-yt[0]:0)}</text>`; });
   xt.forEach(t=>{ s+=`<text x="${X(t)}" y="${m.t+ih+15}" text-anchor="middle" font-size="11" fill="var(--muted)">${span>500?new Date(t).getUTCFullYear()+' '+MON[new Date(t).getUTCMonth()]:fmtShort(t)}</text>`; });
+  if(opts.ref){
+    // natural seawater: faint hatched band + label, beneath the target band
+    const yh=Y(opts.ref.high), yl=Y(opts.ref.low), h=Math.max(1.5,yl-yh);
+    s+=`<defs><pattern id="nswHatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="var(--ref)" stroke-opacity=".35" stroke-width="1.5"/></pattern></defs>`;
+    s+=`<rect x="${m.l}" y="${yl-h}" width="${iw}" height="${h}" fill="url(#nswHatch)"/>`;
+    s+=`<text x="${W-m.r-4}" y="${Math.max(m.t+10,yl-h-3)}" text-anchor="end" font-size="10" fill="var(--ref)">Seawater</text>`;
+  }
   if(opts.low!=null && opts.high!=null){
     const yh=Y(opts.high), yl=Y(opts.low);
     s+=`<rect x="${m.l}" y="${yh}" width="${iw}" height="${Math.max(0,yl-yh)}" fill="var(--band)"/>`;
@@ -318,7 +326,8 @@ function niceTicks(lo,hi,n){
   const out=[]; for(let v=Math.ceil(lo/step)*step; v<=hi+1e-9; v+=step) out.push(+v.toFixed(10));
   return out;
 }
-function fmtTick(v){ const a=Math.abs(v); return a>=1000? v.toLocaleString() : a>=10? String(Math.round(v)) : a>=1? (+v.toFixed(1)).toString() : (+v.toFixed(2)).toString(); }
+// decimals follow the tick step, so 1.0245 / 1.0250 / 1.0255 don't all print as "1"
+function fmtTick(v,step){ const dec=step>0?Math.max(0,Math.min(4,-Math.floor(Math.log10(step)+1e-9))):2; return Math.abs(v)>=1000? v.toLocaleString(undefined,{maximumFractionDigits:dec}) : (+v.toFixed(dec)).toFixed(dec).replace(/(\.\d*?)0+$/,'$1').replace(/\.$/,''); }
 
 /* ------------------------------------------------------------------ render: chrome */
 function renderNav(){
@@ -389,9 +398,9 @@ function renderDashboard(v){
   h+=`<div class="toolbar"><span class="lab">Range</span><div class="seg sm" id="rangeSeg">${[['30','30 d'],['90','90 d'],['182','6 mo'],['365','1 yr'],['all','All']].map(([k,l])=>`<button data-range="${k}" class="${S.range===k?'on':''}">${l}</button>`).join('')}</div>
     <label class="legend" style="cursor:pointer"><input type="checkbox" id="evToggle" ${S.showEvents?'checked':''}> Show events</label>
     <div class="spacer"></div>
-    <div class="legend"><span><i style="width:16px;height:2px;background:var(--series)"></i>Reading</span><span><i style="width:12px;height:10px;background:var(--band);border:1px dashed var(--band-line)"></i>Target</span><span><i style="width:7px;height:7px;border-radius:50%;background:var(--crit)"></i>Out of range</span>${S.showEvents?`<span><i style="width:8px;height:8px;border-radius:50%;background:var(--series-3)"></i>Water change</span>${Logic.tracksGfo(t)?`<span><i style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:8px solid var(--series-2)"></i>GFO</span>`:''}<span><i style="width:7px;height:7px;background:var(--muted);border-radius:1px"></i>Note</span>`:''}</div></div>`;
+    <div class="legend"><span><i style="width:16px;height:2px;background:var(--series)"></i>Reading</span><span><i style="width:12px;height:10px;background:var(--band);border:1px dashed var(--band-line)"></i>Target</span>${Logic.isReef(t)?`<span><i style="width:12px;height:10px;background:repeating-linear-gradient(45deg,transparent 0 2px,var(--ref) 2px 3px);opacity:.55"></i>Natural seawater</span>`:''}<span><i style="width:7px;height:7px;border-radius:50%;background:var(--crit)"></i>Out of range</span>${S.showEvents?`<span><i style="width:8px;height:8px;border-radius:50%;background:var(--series-3)"></i>Water change</span>${Logic.tracksGfo(t)?`<span><i style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:8px solid var(--series-2)"></i>GFO</span>`:''}<span><i style="width:7px;height:7px;background:var(--muted);border-radius:1px"></i>Note</span>`:''}</div></div>`;
   h+='<div class="grid charts" id="chartGrid">';
-  t.params.forEach(p=>{ h+=`<div class="card chart-card"><div class="chart-head"><h3>${esc(p.label)} <span class="muted small">${esc(p.unit)}</span></h3><span class="meta">Target ${fmtNum(p.low,p.dp)}–${fmtNum(p.high,p.dp)}</span></div><div class="chart" data-param="${p.key}"></div></div>`; });
+  t.params.forEach(p=>{ h+=`<div class="card chart-card"><div class="chart-head"><h3>${esc(p.label)} <span class="muted small">${esc(p.unit)}</span></h3><span class="meta">Target ${fmtNum(p.low,p.dp)}–${fmtNum(p.high,p.dp)}${(r=>r?` · seawater ${fmtNum(r.low,p.dp)}–${fmtNum(r.high,p.dp)}`:'')(Logic.seawaterRef(t,p))}</span></div><div class="chart" data-param="${p.key}"></div></div>`; });
   if(es.some(e=>e.waterChange)) h+=`<div class="card chart-card"><div class="chart-head"><h3>Water changes <span class="muted small">gal</span></h3><span class="meta" data-wcsum></span></div><div class="chart" data-wc></div></div>`;
   t.doses.forEach(d=>{ if(es.some(e=>e.doses&&e.doses[d.key]!=null)) h+=`<div class="card chart-card"><div class="chart-head"><h3>Dosing · ${esc(d.label)} <span class="muted small">${esc(d.unit)}</span></h3><span class="meta" data-dosesum="${d.key}"></span></div><div class="chart" data-dose="${d.key}"></div></div>`; });
   h+='</div>';
@@ -416,7 +425,7 @@ function drawCharts(){
   document.querySelectorAll('#chartGrid .chart[data-param]').forEach(el=>{
     const p=t.params.find(q=>q.key===el.dataset.param);
     const pts=inR.filter(e=>e.values&&e.values[p.key]!=null).map(e=>({t:toMs(e.date),v:e.values[p.key],d:e.date,note:e.note&&e.note.includes(p.key.toUpperCase())?e.note:''}));
-    chartSvg(el,{points:pts,low:p.low,high:p.high,dp:p.dp,unit:p.unit,xMin,xMax,events,title:p.label});
+    chartSvg(el,{points:pts,low:p.low,high:p.high,ref:Logic.seawaterRef(t,p),dp:p.dp,unit:p.unit,xMin,xMax,events,title:p.label});
   });
   document.querySelectorAll('#chartGrid .chart[data-wc]').forEach(el=>{
     const pts=inR.filter(e=>e.waterChange&&wcGal(e)!=null).map(e=>({t:toMs(e.date),v:wcGal(e),d:e.date}));
@@ -672,9 +681,11 @@ function renderSettings(v){
     <div class="row" style="margin-top:8px"><label class="f">Name<input type="text" name="${t.id}_name" value="${esc(t.name)}"></label>
       <label class="f">Volume <span class="u">gal — converts % water changes</span><input type="number" step="any" name="${t.id}_volume" value="${t.volume??''}"></label>
       <label class="small" style="display:flex;gap:6px;align-items:center;padding-bottom:9px"><input type="checkbox" name="gfo_${t.id}" ${Logic.tracksGfo(t)?'checked':''}> Track GFO / phosphate media</label></div>
-    <table class="ptable" style="margin-top:10px"><thead><tr><th>Parameter</th><th>Unit</th><th>Target low</th><th>Target high</th><th>Decimals</th><th>Remove</th></tr></thead><tbody>
-    ${t.params.map(p=>`<tr><td><input type="text" name="${t.id}_p_${p.key}_label" value="${esc(p.label)}"></td><td><input type="text" name="${t.id}_p_${p.key}_unit" value="${esc(p.unit)}"></td><td><input type="number" step="any" name="${t.id}_p_${p.key}_low" value="${p.low??''}"></td><td><input type="number" step="any" name="${t.id}_p_${p.key}_high" value="${p.high??''}"></td><td><input type="number" name="${t.id}_p_${p.key}_dp" value="${p.dp??1}"></td><td style="text-align:center"><input type="checkbox" name="${t.id}_p_${p.key}_rm" title="Hide this parameter (readings are kept)"></td></tr>`).join('')}
-    <tr><td><input type="text" name="${t.id}_newp_label" placeholder="Add parameter…"></td><td><input type="text" name="${t.id}_newp_unit" placeholder="unit"></td><td><input type="number" step="any" name="${t.id}_newp_low"></td><td><input type="number" step="any" name="${t.id}_newp_high"></td><td><input type="number" name="${t.id}_newp_dp" value="1"></td><td></td></tr></tbody></table>
+    <div class="row" style="margin-top:8px;align-items:end"><label class="f">Target preset<select data-presetsel="${t.id}">${presetOptions(t.kind)}</select></label>
+      <div style="grid-column:2 / -1;padding-bottom:4px"><button class="btn sm" type="button" data-applypreset="${t.id}">Apply preset targets…</button></div></div>
+    <table class="ptable" style="margin-top:10px"><thead><tr><th>Parameter</th><th>Unit</th><th>Target low</th><th>Target high</th><th title="Alert when the change between two readings (less than 14 days apart) exceeds this per day. Blank for off.">Max change/day</th><th>Decimals</th><th>Remove</th></tr></thead><tbody>
+    ${t.params.map(p=>`<tr><td><input type="text" name="${t.id}_p_${p.key}_label" value="${esc(p.label)}"></td><td><input type="text" name="${t.id}_p_${p.key}_unit" value="${esc(p.unit)}"></td><td><input type="number" step="any" name="${t.id}_p_${p.key}_low" value="${p.low??''}"></td><td><input type="number" step="any" name="${t.id}_p_${p.key}_high" value="${p.high??''}"></td><td><input type="number" step="any" min="0" name="${t.id}_p_${p.key}_maxDaily" value="${p.maxDaily??''}"></td><td><input type="number" name="${t.id}_p_${p.key}_dp" value="${p.dp??1}"></td><td style="text-align:center"><input type="checkbox" name="${t.id}_p_${p.key}_rm" title="Hide this parameter (readings are kept)"></td></tr>`).join('')}
+    <tr><td><input type="text" name="${t.id}_newp_label" placeholder="Add parameter…"></td><td><input type="text" name="${t.id}_newp_unit" placeholder="unit"></td><td><input type="number" step="any" name="${t.id}_newp_low"></td><td><input type="number" step="any" name="${t.id}_newp_high"></td><td><input type="number" step="any" min="0" name="${t.id}_newp_maxDaily"></td><td><input type="number" name="${t.id}_newp_dp" value="1"></td><td></td></tr></tbody></table>
     <table class="ptable" style="margin-top:10px"><thead><tr><th>Dosing product</th><th>Unit</th><th>Remove</th></tr></thead><tbody>
     ${t.doses.map(d=>`<tr><td><input type="text" name="${t.id}_d_${d.key}_label" value="${esc(d.label)}"></td><td><input type="text" name="${t.id}_d_${d.key}_unit" value="${esc(d.unit)}"></td><td style="text-align:center"><input type="checkbox" name="${t.id}_d_${d.key}_rm"></td></tr>`).join('')}
     <tr><td><input type="text" name="${t.id}_newd_label" placeholder="Add product…"></td><td><input type="text" name="${t.id}_newd_unit" placeholder="ml"></td><td></td></tr></tbody></table>
@@ -706,10 +717,10 @@ function renderSettings(v){
     c.rodi={wasteRatio:num(fd.get('wasteRatio'))??0,tdsLimit:num(fd.get('tdsLimit'))??1,tdsStaleDays:num(fd.get('tdsStaleDays'))??0,warnPct:num(fd.get('warnPct'))??80};
     c.tanks.forEach(t=>{
       t.name=String(fd.get(t.id+'_name')||t.name).trim()||t.name; t.volume=num(fd.get(t.id+'_volume')); t.trackGfo=fd.get('gfo_'+t.id)==='on';
-      t.params.forEach(p=>{ p.label=String(fd.get(`${t.id}_p_${p.key}_label`)).trim()||p.label; p.unit=String(fd.get(`${t.id}_p_${p.key}_unit`)).trim(); p.low=num(fd.get(`${t.id}_p_${p.key}_low`)); p.high=num(fd.get(`${t.id}_p_${p.key}_high`)); p.dp=num(fd.get(`${t.id}_p_${p.key}_dp`))??1; });
+      t.params.forEach(p=>{ p.label=String(fd.get(`${t.id}_p_${p.key}_label`)).trim()||p.label; p.unit=String(fd.get(`${t.id}_p_${p.key}_unit`)).trim(); p.low=num(fd.get(`${t.id}_p_${p.key}_low`)); p.high=num(fd.get(`${t.id}_p_${p.key}_high`)); p.maxDaily=num(fd.get(`${t.id}_p_${p.key}_maxDaily`)); p.dp=num(fd.get(`${t.id}_p_${p.key}_dp`))??1; });
       t.params=t.params.filter(p=>fd.get(`${t.id}_p_${p.key}_rm`)!=='on');
       const nl=String(fd.get(t.id+'_newp_label')||'').trim();
-      if(nl) t.params.push({key:Logic.uniqueKey(nl,t.params.map(p=>p.key)),label:nl,unit:String(fd.get(t.id+'_newp_unit')||'').trim(),low:num(fd.get(t.id+'_newp_low')),high:num(fd.get(t.id+'_newp_high')),dp:num(fd.get(t.id+'_newp_dp'))??1});
+      if(nl) t.params.push({key:Logic.uniqueKey(nl,t.params.map(p=>p.key)),label:nl,unit:String(fd.get(t.id+'_newp_unit')||'').trim(),low:num(fd.get(t.id+'_newp_low')),high:num(fd.get(t.id+'_newp_high')),maxDaily:num(fd.get(t.id+'_newp_maxDaily')),dp:num(fd.get(t.id+'_newp_dp'))??1});
       t.doses.forEach(d=>{ d.label=String(fd.get(`${t.id}_d_${d.key}_label`)).trim()||d.label; d.unit=String(fd.get(`${t.id}_d_${d.key}_unit`)).trim(); });
       t.doses=t.doses.filter(d=>fd.get(`${t.id}_d_${d.key}_rm`)!=='on');
       const dl=String(fd.get(t.id+'_newd_label')||'').trim();
@@ -717,6 +728,10 @@ function renderSettings(v){
     });
     if(await saveConfig(c)) renderSettings(v);
   };
+  v.querySelectorAll('[data-applypreset]').forEach(b=>b.onclick=()=>{ const t=c.tanks.find(x=>x.id===b.dataset.applypreset), key=v.querySelector(`[data-presetsel="${t.id}"]`).value;
+    const preview=Logic.applyPreset(Logic.clone(t), key);
+    const what=preview.length?preview.map(x=>`${x.label} ${fmtNum(x.from[0])}–${fmtNum(x.from[1])} → ${fmtNum(x.to[0])}–${fmtNum(x.to[1])}`).join('; '):'targets already match';
+    confirmInline(b,`Apply “${Logic.TANK_PRESETS[key].label}” to ${t.name}? ${what}. Parameters the preset doesn’t have are kept; unsaved edits on this page are discarded.`,async()=>{ Logic.applyPreset(t,key); if(await saveConfig(c,`Applied ${Logic.TANK_PRESETS[key].label} targets`)) renderSettings(v); }); });
   v.querySelectorAll('[data-deltank]').forEach(b=>b.onclick=()=>{ const t=c.tanks.find(x=>x.id===b.dataset.deltank); const n=S.entries.filter(e=>e.tank===t.id).length;
     confirmInline(b,`Delete ${t.name}${n?` and its ${n} entries`:''}? This can’t be undone.`,async()=>{ const ok=await write(()=>req('POST',`/api/tanks/${encodeURIComponent(t.id)}/delete`),`Deleted ${t.name}`); if(ok) renderSettings(v); }); });
   const sn=$('#syncNow'); if(sn) sn.onclick=async()=>{ sn.disabled=true; $('#syncResult').textContent='Syncing…'; try{ const r=await req('POST','/api/sync'); $('#syncResult').textContent=r.committed?`Committed ${r.sha.slice(0,7)}`:'Up to date (no changes)'; S.info.sync=Object.assign(S.info.sync,r.status); }catch(e){ $('#syncResult').textContent='Failed: '+e.message; } sn.disabled=false; };
